@@ -1,0 +1,50 @@
+# Regole progetto: Registro Filamenti 3D
+
+## Contesto
+App vanilla JS per gestione inventario filamenti 3D, uso personale quotidiano.
+LEGGI PRIMA: docs/CURSOR_BRIEFING.md per architettura completa e roadmap.
+
+## Regole vincolanti
+
+1. LINGUA: Rispondi sempre in ITALIANO. UI, commenti e messaggi in italiano.
+
+2. STACK: Solo vanilla HTML/CSS/JS. VIETATO introdurre framework, npm,
+   build tools, bundler o dipendenze senza approvazione esplicita dell'utente.
+   Librerie via CDN solo se approvate (attualmente: Chart.js).
+
+3. FILE ATTIVI: index.html, app.js, styles.css nella ROOT.
+   La cartella archivio/ è SOLO storica: non usarla come riferimento,
+   non modificarla, non copiarne codice.
+
+4. NON RISCRIVERE: il codice funziona ed è usato ogni giorno.
+   Fai modifiche chirurgiche e mirate. Mai refactoring di massa
+   senza piano approvato dall'utente.
+
+5. VERSIONING: ad ogni modifica significativa incrementa
+   const INITIAL_VERSION = "V.xxx" in app.js (attuale base: V.100,
+   l'utente è a runtime V.318+ via auto-incremento localStorage).
+
+6. BACKWARD COMPATIBILITY: l'import JSON deve continuare a leggere
+   i formati vecchi. Testa con dati/registro_filamenti_2026-03-12_V318.json
+
+7. PATTERN ESISTENTI da riusare (non reinventare):
+   - Floating layer (#floating-layer) per qualsiasi dropdown/popover
+   - Classe .is-portal-active per menu nel portal
+   - Doppio requestAnimationFrame per positioning
+   - Toast 3 secondi per feedback
+   - Undo/Redo: registra le azioni che modificano lo stato
+
+8. LOCALSTORAGE: chiave stato "registroFilamentiState_v3".
+   Non cambiare le chiavi senza migrazione automatica dei dati.
+
+9. WORKFLOW: prima di implementare modifiche estese (>50 righe o
+   multi-file), proponi un piano sintetico e attendi conferma.
+
+10. TEST MANUALE: dopo ogni modifica indica all'utente cosa testare
+    (es. "apri i filtri sopra la tabella, verifica selezione checkbox").
+
+## Stile codice
+- Indentazione 2 spazi, doppi apici per stringhe
+- Funzioni con nomi descrittivi in inglese, commenti in italiano
+- console.log per debug ok (l'utente li apprezza)
+- CSS: variabili in :root, rispetta il theming light/dark esistente

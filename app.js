@@ -1,6 +1,6 @@
   const STORAGE_KEY = "registroFilamentiState_v3";
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.100";
+  const INITIAL_VERSION = "V.101";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
