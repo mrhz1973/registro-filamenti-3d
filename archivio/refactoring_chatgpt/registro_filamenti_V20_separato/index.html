@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>V.90 - Registro Filamenti 3D - Magazzino locale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="header-title-block">
+      <h1>
+        <span class="header-logo">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M4 16.5V7.5C4 6.119 5.119 5 6.5 5H9l2-2h2l2 2h2.5C18.881 5 20 6.119 20 7.5v9c0 1.381-1.119 2.5-2.5 2.5h-11C5.119 19 4 17.881 4 16.5Z"
+              stroke="currentColor"
+              stroke-width="1.4"
+            />
+            <path
+              d="M8 11.5h8M8 14h4"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        </span>
+        Registro Filamenti 3D
+        <span id="appVersionBadge" class="badge" style="margin-left:0.25rem;">V.90</span>
+      </h1>
+      <p>
+        Gestione locale del magazzino filamenti (import JSON, consumi in quarti,
+        allarmi fine rotolo).
+      </p>
+    </div>
+    <div class="header-actions">
+      <button
+        type="button"
+        id="refreshAppButton"
+        class="btn-secondary btn-xs"
+        title="Ricarica i dati salvati nel browser"
+      >
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M5 12a7 7 0 0 1 11.95-4.95" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M6 5.5h4V1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M19 12a7 7 0 0 1-11.95 4.95" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M18 18.5h-4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Aggiorna app
+      </button>
+      <button
+        type="button"
+        id="themeToggleButton"
+        class="theme-toggle-button btn-xs"
+      >
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 3v2.5M12 18.5V21M5 12H2.5M21.5 12H19M6 6 4.5 4.5M19.5 19.5 18 18M6 18 4.5 19.5M19.5 4.5 18 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        <span id="themeToggleLabel">Tema chiaro</span>
+      </button>
+      <div style="position: relative; display: inline-block;">
+        <button
+          type="button"
+          id="undoButton"
+          class="btn-secondary btn-xs"
+          title="Annulla ultima azione"
+          disabled
+        >
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 7v6h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Annulla</span>
+          <span style="margin-left: 0.25rem;">▼</span>
+        </button>
+        <div id="undoDropdown" class="undo-redo-dropdown" style="display: none;">
+          <div class="undo-redo-dropdown-header">Ultime azioni da annullare:</div>
+          <div id="undoDropdownList"></div>
+        </div>
+      </div>
+      <div style="position: relative; display: inline-block;">
+        <button
+          type="button"
+          id="redoButton"
+          class="btn-secondary btn-xs"
+          title="Ripristina azione annullata"
+          disabled
+        >
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M21 7v6h-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Ripristina</span>
+          <span style="margin-left: 0.25rem;">▼</span>
+        </button>
+        <div id="redoDropdown" class="undo-redo-dropdown" style="display: none;">
+          <div class="undo-redo-dropdown-header">Ultime azioni da ripristinare:</div>
+          <div id="redoDropdownList"></div>
+        </div>
+      </div>
+      <button
+        type="button"
+        id="settingsButton"
+        class="btn-secondary"
+        title="Impostazioni e gestione dati"
+        style="padding: 0.65rem 1.25rem; font-size: 0.95rem; font-weight: 600;"
+      >
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+          <path
+            d="M5.5 12a6.5 6.5 0 0 1 .09-1.08l-1.6-1.23a.7.7 0 0 1-.15-.9l1.52-2.64a.7.7 0 0 1 .86-.31l1.9.73A6.5 6.5 0 0 1 9.86 5h4.28c.39 0 .73.26.86.63l.73 1.9 1.9-.73a.7.7 0 0 1 .86.31l1.52 2.64a.7.7 0 0 1-.15.9l-1.6 1.23c.06.36.09.72.09 1.08s-.03.72-.09 1.08l1.6 1.23c.3.23.39.65.15.97l-1.52 2.64a.7.7 0 0 1-.86.31l-1.9-.73-.73 1.9a.9.9 0 0 1-.86.63H9.86a.9.9 0 0 1-.86-.63l-.73-1.9-1.9.73a.7.7 0 0 1-.86-.31L3.99 15.3a.7.7 0 0 1 .15-.9l1.6-1.23A6.5 6.5 0 0 1 5.5 12Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- 1. Dashboard -->
+  <section id="dashboardSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 12.5C4 9.462 4 7.943 4.878 7.071 5.757 6.2 7.171 6.2 10 6.2h4c2.829 0 4.243 0 5.122.871C20 7.943 20 9.462 20 12.5s0 4.557-.878 5.429C18.243 18.8 16.829 18.8 14 18.8h-4c-2.829 0-4.243 0-5.122-.871C4 17.057 4 15.538 4 12.5Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+          <path
+            d="M9 11.5h2.5V9"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+          />
+        </svg>
+      </span>
+      Panoramica
+    </h2>
+    <p style="font-size: 0.9rem; margin: 0">
+      Questa pagina è un'app locale per monitorare i filamenti 3D che possiedi.
+      I dati sono salvati solo nel browser (localStorage) e puoi
+      esportarli/importarli come file JSON.
+    </p>
+
+    <div class="summary-cards">
+      <div class="summary-card info">
+        <div class="summary-card-inner">
+          <div class="summary-card-label">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 7.5C5 6.119 6.12 5 7.5 5h9A2.5 2.5 0 0 1 19 7.5v9A2.5 2.5 0 0 1 16.5 19h-9A2.5 2.5 0 0 1 5 16.5v-9Z"
+                stroke="currentColor"
+                stroke-width="1.4"
+              />
+              <path
+                d="M9 11.5h3.5"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              />
+            </svg>
+            Rotoli totali
+          </div>
+          <div class="summary-card-value" id="totalSpoolsValue">0</div>
+          <div class="summary-card-sub">
+            Somma di tutte le bobine inserite a magazzino.
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-card success">
+        <div class="summary-card-inner">
+          <div class="summary-card-label">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5.5 12.5 9 16l9-9"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <rect
+                x="3.5"
+                y="4.5"
+                width="17"
+                height="15"
+                rx="2"
+                stroke="currentColor"
+                stroke-width="1.4"
+              />
+            </svg>
+            Grammi residui
+          </div>
+          <div class="summary-card-value" id="totalRemainingGramsValue">
+            0 g
+          </div>
+          <div class="summary-card-sub">
+            Stima dei grammi ancora disponibili in tutti i rotoli.
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-card-inner">
+          <div class="summary-card-label">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M5 6.5C5 5.672 5.672 5 6.5 5h11A2.5 2.5 0 0 1 20 7.5v8.5"
+                stroke="currentColor"
+                stroke-width="1.4"
+              />
+              <path
+                d="M7 6.5h5.5"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              />
+            </svg>
+            Grammi consumati
+          </div>
+          <div class="summary-card-value" id="totalUsedGramsValue">0 g</div>
+          <div class="summary-card-sub">
+            Differenza tra grammi acquistati e residui stimati.
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-card warning">
+        <div class="summary-card-inner">
+          <div class="summary-card-label">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 4 4 18h16L12 4Z"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M12 10v4M12 16.5v.5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+            Rotoli critici
+          </div>
+          <div class="summary-card-value" id="lowStockCountValue">0</div>
+          <div class="summary-card-sub">
+            Rotoli quasi finiti o ultima bobina aperta del colore.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Aggiungi / importa -->
+  <section id="addSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 4v16M4 12h16"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <rect
+            x="3.5"
+            y="3.5"
+            width="17"
+            height="17"
+            rx="3"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+        </svg>
+      </span>
+      2. Aggiungi / importa filamenti
+    </h2>
+    <p>
+      Inserisci manualmente i filamenti che hai comprato (anche passati). Con
+      “Nuove” e “Aperte” indichi quante bobine di quel tipo hai oggi in casa.
+      Il campo "Bobine totali" viene calcolato automaticamente come somma
+      di Nuove + Aperte che stai aggiungendo ora.
+    </p>
+
+    <div class="grid">
+      <label>
+        Marca
+        <select id="addBrandSelect"></select>
+        <input
+          type="text"
+          id="addBrandCustom"
+          placeholder="Nuova marca (se non in elenco)"
+        />
+      </label>
+
+      <label>
+        Materiale
+        <select id="addMaterialSelect"></select>
+        <input
+          type="text"
+          id="addMaterialCustom"
+          placeholder="Nuovo materiale (se non in elenco)"
+        />
+      </label>
+
+      <label>
+        Colore / Variante
+        <div id="addColorDropdownContainer"></div>
+        <input
+          type="text"
+          id="addColorCustom"
+          placeholder="Colore o nome variante (se non in elenco)"
+          style="display: none;"
+        />
+      </label>
+
+      <label>
+        Codice colore / SKU (facoltativo)
+        <input
+          type="text"
+          id="addColorCodeInput"
+          placeholder="Es. codice Bambu Lab; lascia vuoto se non lo conosci"
+        />
+      </label>
+
+      <label>
+        Anteprima colore selezionato
+        <div class="color-preview">
+          <div id="addColorPreviewDot" class="color-preview-dot"></div>
+          <div class="color-preview-label" id="addColorPreviewLabel">
+            Nessun colore selezionato
+          </div>
+        </div>
+      </label>
+
+      <label>
+        Bobine totali (Nuove + Aperte)
+        <input
+          type="number"
+          id="addSpoolsTotalInput"
+          min="1"
+          step="1"
+          placeholder="Calcolato automaticamente"
+          readonly
+        />
+      </label>
+
+      <label>
+        Bobine nuove (sigillate oggi)
+        <input
+          type="number"
+          id="addSealedSpoolsInput"
+          min="0"
+          step="1"
+          placeholder="0 se nessuna"
+        />
+      </label>
+
+      <label>
+        Bobine aperte
+        <input
+          type="number"
+          id="addOpenSpoolsInput"
+          min="0"
+          step="1"
+          placeholder="0 se tutte finite"
+        />
+      </label>
+
+      <div id="addSpoolsLocationsContainer" style="display: none; grid-column: 1 / -1;">
+        <label style="font-weight: 600; margin-bottom: 0.5rem;">Posizioni bobine</label>
+        <div id="addSpoolsLocationsList" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; background: var(--surface-soft); border-radius: 0.5rem;">
+          <!-- Le posizioni verranno aggiunte dinamicamente qui -->
+        </div>
+      </div>
+
+      <label>
+        Grammi per bobina
+        <select id="addUnitWeightPreset">
+          <option value="1000">1.000 g (1 kg)</option>
+          <option value="750">750 g</option>
+          <option value="500">500 g</option>
+          <option value="250">250 g</option>
+          <option value="__custom__">Altro formato...</option>
+        </select>
+        <input
+          type="number"
+          id="addUnitWeightInput"
+          min="1"
+          step="1"
+          placeholder="Altro valore in grammi"
+        />
+      </label>
+
+      <label>
+        Tipo confezionamento
+        <select id="addPackagingType">
+          <option value="spool">Con bobina (spool)</option>
+          <option value="refill">Ricarica (refill)</option>
+        </select>
+      </label>
+
+      <label>
+        Prezzo unitario (€)
+        <input
+          type="number"
+          id="addPriceInput"
+          min="0"
+          step="0.01"
+          placeholder="Es. 23.50"
+        />
+      </label>
+
+      <label>
+        Fornitore / negozio
+        <input
+          type="text"
+          id="addSupplierInput"
+          placeholder="Es. Amazon, Bambu Lab EU..."
+        />
+      </label>
+
+      <label>
+        Note (opzionali)
+        <textarea
+          id="addNotesInput"
+          placeholder="Es. lotto, promo, uso preferito..."
+        ></textarea>
+      </label>
+
+      <label>
+        Stima residuo bobina principale aperta
+        <select id="addFractionSelect">
+          <option value="1">Piena (4/4)</option>
+          <option value="0.75">3/4</option>
+          <option value="0.5">Metà (2/4)</option>
+          <option value="0.25">1/4</option>
+          <option value="0">Finita (0/4)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="buttons-row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+      <button type="button" id="addFilamentButton">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 4v16M4 12h16"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </svg>
+        Aggiungi filamento
+      </button>
+
+      <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button type="button" class="btn-json-import" id="importJsonButton" style="display:inline-flex; align-items:center; gap:0.5rem; padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 0.5rem; font-weight: 600; font-size: inherit; line-height: 1.5; border: none; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); transition: all 0.2s ease; cursor: pointer; margin: 0; vertical-align: middle;" title="Importa database da file JSON">
+          <svg viewBox="0 0 24 24" fill="none" style="width:20px;height:20px;flex-shrink:0;">
+            <path d="M12 3v12M12 15l-4-4M12 15l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span style="white-space: nowrap;">📥 Importa JSON</span>
+        </button>
+        <input
+          type="file"
+          id="importJsonInput"
+          accept="application/json"
+          style="display: none"
+        />
+
+        <button type="button" class="btn-json-export" id="exportJsonButton" style="display:inline-flex; align-items:center; gap:0.5rem; padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border-radius: 0.5rem; font-weight: 600; font-size: inherit; line-height: 1.5; border: none; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3); transition: all 0.2s ease; cursor: pointer; margin: 0; vertical-align: middle;" title="Esporta database completo (magazzino + fatture)">
+          <svg viewBox="0 0 24 24" fill="none" style="width:20px;height:20px;flex-shrink:0;">
+            <path d="M12 15V3M12 3l-4 4M12 3l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span style="white-space: nowrap;">📤 Esporta database</span>
+        </button>
+        <button type="button" class="btn-json-export" id="exportInvoicesButton" style="display:inline-flex; align-items:center; gap:0.5rem; padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: white; border-radius: 0.5rem; font-weight: 600; font-size: inherit; line-height: 1.5; border: none; box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3); transition: all 0.2s ease; cursor: pointer; margin: 0; vertical-align: middle;" title="Esporta solo le fatture importate (per ri-importazione)">
+          <svg viewBox="0 0 24 24" fill="none" style="width:20px;height:20px;flex-shrink:0;">
+            <path d="M12 15V3M12 3l-4 4M12 3l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <span style="white-space: nowrap;">📄 Esporta Fatture</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="hint">
+      Il nuovo filamento viene creato con:
+      <br />
+      – <strong>Bobine totali</strong> = bobine nuove + bobine aperte che stai
+      aggiungendo ora (campo non modificabile a mano).<br />
+      – <strong>Grammi totali</strong> = bobine totali × g/bobina (quello che
+      hai comprato/aggiunto in tutto).<br />
+      – <strong>Residuo</strong> calcolato da “Nuove” + “Aperte” e dalla
+      frazione scelta.<br />
+      – Se lasci <strong>Nuove = 0</strong> e <strong>Aperte = 0</strong>, non
+      puoi aggiungere il filamento: devi avere almeno una bobina disponibile.
+      Per indicare che un filamento è finito usa la sezione "Stato rotoli".
+    </div>
+  </section>
+
+  <!-- 3a. Magazzino filamenti disponibili -->
+  <section id="stockSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M5 6.5C5 5.672 5.672 5 6.5 5h11A2.5 2.5 0 0 1 20 7.5v10A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </span>
+      3a. Magazzino filamenti disponibili
+    </h2>
+    <p>
+      Qui vengono mostrati i filamenti <strong>disponibili a magazzino</strong>
+      (rotoli nuovi/aperti e consumi reali).
+      Puoi riempire questa tabella sia inserendo i dati a mano, sia trasferendo bobine dalla sezione
+      successiva "Magazzino filamenti comprati". Se aggiungi più volte lo stesso
+      filamento (stessa marca, materiale, colore, codice e peso), le quantità
+      vengono sommate in un'unica riga.
+    </p>
+
+    <!-- Filtri tabella magazzino disponibile -->
+    <div class="filter-bar" id="stockFilterBar">
+      <label>
+        <div class="filter-label">Marca</div>
+        <select id="stockFilterBrand">
+          <option value="">Tutte le marche</option>
+        </select>
+      </label>
+      <label>
+        <div class="filter-label">Materiale</div>
+        <select id="stockFilterMaterial">
+          <option value="">Tutti i materiali</option>
+        </select>
+      </label>
+      <label>
+        <div class="filter-label">Tipo</div>
+        <select id="stockFilterPackaging">
+          <option value="">Tutti i tipi</option>
+          <option value="spool">Bobina</option>
+          <option value="refill">Ricarica</option>
+        </select>
+      </label>
+      <button type="button" class="btn-reset-filters" id="resetStockFilters" title="Resetta tutti i filtri">
+        <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;margin-right:0.25rem;">
+          <path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Reset
+      </button>
+    </div>
+
+    <div class="table-toolbar">
+      <button
+        type="button"
+        class="btn-xs btn-danger"
+        id="deleteSelectedButton"
+        title="Elimina i filamenti selezionati"
+      >
+        Elimina selezionati
+      </button>
+      <div class="search-input-wrapper">
+        <span class="search-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle
+              cx="11"
+              cy="11"
+              r="5.5"
+              stroke="currentColor"
+              stroke-width="1.4"
+            />
+            <path
+              d="m15.5 15.5 3 3"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        </span>
+        <div style="position: relative; flex: 1;">
+          <input
+            type="text"
+            id="stockSearchInput"
+            placeholder="Cerca per marca, materiale, colore..."
+            style="padding-right: 2.5rem;"
+          />
+          <button
+            type="button"
+            id="stockSearchClear"
+            class="search-clear-btn"
+            style="display: none;"
+            title="Cancella ricerca"
+          >
+            <svg viewBox="0 0 24 24" fill="none" style="width: 16px; height: 16px;">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table id="filamentTable">
+        <thead>
+          <tr>
+            <th class="select-column" style="width: 32px; min-width: 32px;">
+              <input
+                type="checkbox"
+                id="selectAllFilaments"
+                title="Seleziona o deseleziona tutti i filamenti visibili"
+              />
+            </th>
+            <th data-sort-field="brand" class="sortable resizable" style="width: 115px; min-width: 95px;">Marca</th>
+            <th data-sort-field="material" class="sortable resizable" style="width: 105px; min-width: 90px;">Materiale</th>
+            <th data-sort-field="variant" class="sortable resizable" style="width: 165px; min-width: 140px;">Variante / colore</th>
+            <th data-sort-field="color_code" class="sortable resizable" style="width: 105px; min-width: 90px;">Codice colore</th>
+            <th data-sort-field="packaging_type" class="sortable resizable" style="width: 80px; min-width: 70px;">Tipo</th>
+            <th data-sort-field="spools_total" class="sortable resizable" style="width: 60px; min-width: 55px;">Bobine</th>
+            <th data-sort-field="sealed_spools" class="sortable resizable" style="width: 60px; min-width: 55px;">Nuove</th>
+            <th data-sort-field="open_spools" class="sortable resizable" style="width: 60px; min-width: 55px;">Aperte</th>
+            <th data-sort-field="unit_weight_g" class="sortable resizable" style="width: 70px; min-width: 65px;">g/bob.</th>
+            <th data-sort-field="total_weight_g" class="sortable resizable" style="width: 80px; min-width: 75px;">g tot.</th>
+            <th data-sort-field="remaining_weight_g" class="sortable resizable" style="width: 85px; min-width: 80px;">g residui</th>
+            <th data-sort-field="remaining_weight_g" class="sortable resizable" style="width: 200px; min-width: 180px;">Barra residuo</th>
+            <th data-sort-field="unit_price" class="sortable resizable" style="width: 75px; min-width: 70px;">€/bob.</th>
+            <th data-sort-field="location" class="sortable resizable" style="width: 115px; min-width: 95px;">Posizione</th>
+            <th>Azioni</th>
+          </tr>
+        </thead>
+        <tbody id="filamentTableBody"></tbody>
+      </table>
+    </div>
+    <div class="hint">
+      Puoi cercare, ordinare per colonna, consumare rapidamente o eliminare un
+      filamento. I rotoli quasi finiti o l'ultimo rotolo aperto vengono
+      evidenziati.
+    </div>
+  </section>
+
+  <!-- 3b. Magazzino filamenti comprati -->
+  <section id="purchasedSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M5 6.5C5 5.672 5.672 5 6.5 5h11A2.5 2.5 0 0 1 20 7.5v10A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 9h8M8 12h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </span>
+      3b. Magazzino filamenti comprati
+    </h2>
+    <p>
+      Questa sezione è pensata per i filamenti acquistati dalle fatture
+      (file JSON generati dalle fatture Bambu Lab o di altri fornitori).
+      Da qui puoi spostare bobine nel "Magazzino filamenti disponibili":
+      quando lo fai, la quantità mostrata in questa tabella viene scalata
+      in automatico, così vedi quante bobine comprate non hai ancora caricato
+      a magazzino.
+    </p>
+
+    <!-- Form per aggiungere manualmente un filamento comprato -->
+    <details class="add-purchased-details" style="margin-bottom: 1rem;">
+      <summary style="cursor: pointer; padding: 0.5rem; background: var(--surface); border-radius: 0.5rem; font-weight: 600;">
+        ➕ Aggiungi filamento comprato manualmente
+      </summary>
+      <div class="grid" style="margin-top: 0.75rem; padding: 0.75rem; background: var(--surface-soft); border-radius: 0.5rem;">
+        <label>
+          Data ordine
+          <input type="date" id="addPurchasedDate" />
+        </label>
+        <label>
+          Marca
+          <select id="addPurchasedBrand">
+            <option value="">Seleziona...</option>
+            <option value="Bambu Lab">Bambu Lab</option>
+            <option value="__custom__">Altra marca...</option>
+          </select>
+          <input type="text" id="addPurchasedBrandCustom" placeholder="Nome marca" style="margin-top: 0.25rem; display: none;" />
+        </label>
+        <label>
+          Materiale
+          <input type="text" id="addPurchasedMaterial" placeholder="Es. PLA Basic, PETG HF..." />
+        </label>
+        <label>
+          Colore / variante
+          <input type="text" id="addPurchasedVariant" placeholder="Es. Nero (10101)" />
+        </label>
+        <label>
+          Codice colore
+          <input type="text" id="addPurchasedColorCode" placeholder="Es. 10101" />
+        </label>
+        <label>
+          Tipo confezionamento
+          <select id="addPurchasedPackaging">
+            <option value="spool">Con bobina (spool)</option>
+            <option value="refill">Ricarica (refill)</option>
+          </select>
+        </label>
+        <label>
+          Quantità bobine
+          <input type="number" id="addPurchasedQty" min="1" step="1" value="1" />
+        </label>
+        <label>
+          Grammi per bobina
+          <input type="number" id="addPurchasedWeight" min="1" step="1" value="1000" />
+        </label>
+        <label>
+          Prezzo unitario (€)
+          <input type="number" id="addPurchasedPrice" min="0" step="0.01" placeholder="Es. 23.50" />
+        </label>
+        <div style="display: flex; align-items: flex-end;">
+          <button type="button" id="addPurchasedButton" class="btn-secondary" style="width: 100%;">
+            Aggiungi a comprati
+          </button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Filtri tabella filamenti comprati -->
+    <div class="filter-bar" id="purchasedFilterBar">
+      <label>
+        <div class="filter-label">Marca</div>
+        <select id="purchasedFilterBrand">
+          <option value="">Tutte le marche</option>
+        </select>
+      </label>
+      <label>
+        <div class="filter-label">Materiale</div>
+        <select id="purchasedFilterMaterial">
+          <option value="">Tutti i materiali</option>
+        </select>
+      </label>
+      <label>
+        <div class="filter-label">Tipo</div>
+        <select id="purchasedFilterPackaging">
+          <option value="">Tutti i tipi</option>
+          <option value="spool">Bobina</option>
+          <option value="refill">Ricarica</option>
+        </select>
+      </label>
+      <button type="button" class="btn-reset-filters" id="resetPurchasedFilters" title="Resetta tutti i filtri">
+        <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;margin-right:0.25rem;">
+          <path d="M4 4l16 16M20 4L4 20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        Reset
+      </button>
+    </div>
+
+    <div class="table-wrapper">
+      <table id="purchasedTable">
+        <thead>
+          <tr>
+            <th data-sort-field="order_date" class="sortable">Data ordine</th>
+            <th data-sort-field="brand" class="sortable">Marca</th>
+            <th data-sort-field="material" class="sortable">Materiale</th>
+            <th data-sort-field="variant" class="sortable">Colore / variante</th>
+            <th data-sort-field="color_code" class="sortable">Codice colore</th>
+            <th data-sort-field="packaging_type" class="sortable">Tipo</th>
+            <th data-sort-field="quantity_spools" class="sortable">Quantità</th>
+            <th data-sort-field="unit_price" class="sortable">€/bob.</th>
+            <th>Azioni</th>
+          </tr>
+        </thead>
+        <tbody id="purchasedTableBody">
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <rect
+                    x="4"
+                    y="5"
+                    width="16"
+                    height="14"
+                    rx="2"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                  <path
+                    d="M8 9h8M8 12h5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
+                  <path
+                    d="M6 5V4h12v1"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                  />
+                </svg>
+                <div class="empty-state-title">
+                  In attesa dei dati delle fatture.
+                </div>
+                <div class="empty-state-text">
+                  Quando mi fornirai il file JSON con le fatture dei
+                  filamenti, qui verranno mostrati automaticamente i
+                  filamenti comprati, separati da quelli che hai inserito
+                  manualmente.
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. Stato rotoli -->
+  <section id="spoolsStateSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4.5 8.5A2.5 2.5 0 0 1 7 6h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 18H7a2.5 2.5 0 0 1-2.5-2.5v-7Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+          <path
+            d="M9 9h6M9 12h3"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+          />
+        </svg>
+      </span>
+      4. Stato rotoli & consumi
+    </h2>
+
+    <div class="grid">
+      <div class="summary">
+        <p><strong>Riepilogo rapido:</strong></p>
+        <ul>
+          <li>
+            Rotoli nuovi (sigillati):
+            <span id="stockNewSpoolsCount">0</span>
+          </li>
+          <li>
+            Rotoli aperti:
+            <span id="stockOpenSpoolsCount">0</span>
+          </li>
+          <li>
+            Rulli extra (usati per ricariche):
+            <span id="stockExtraSpoolsCount">0</span>
+            <span class="hint" style="font-size:0.7rem;margin-left:0.3rem;" title="Quando apri una ricarica (refill) usi un rullo a parte, non incluso nella confezione">ⓘ</span>
+          </li>
+          <li>
+            Grammi totali residui (stima):
+            <span id="stockRemainingGramsTotal">0 g</span>
+          </li>
+        </ul>
+        <p class="hint">
+          I calcoli usano i quarti del rotolo aperto: 1/4, 1/2, 3/4, pieno.
+          Quando aggiorni un filamento, imposti quanti rotoli sono ancora nuovi,
+          quanti aperti e quanto rimane nella bobina più consumata.
+          <br><br>
+          <strong>Rulli extra:</strong> Quando apri una ricarica (refill), stai usando un rullo/bobina a parte 
+          (es. riutilizzabile Bambu). Questo contatore tiene traccia di quanti rulli extra stai utilizzando.
+        </p>
+      </div>
+
+      <div style="grid-column: 1 / -1;">
+        <table class="data-table" style="width: 100%;">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort-field="brand" style="cursor: pointer; width: 120px;">
+                Marca
+                <span class="sort-indicator"></span>
+              </th>
+              <th class="sortable" data-sort-field="material" style="cursor: pointer; width: 110px;">
+                Materiale
+                <span class="sort-indicator"></span>
+              </th>
+              <th class="sortable" data-sort-field="variant" style="cursor: pointer; width: 170px;">
+                Colore
+                <span class="sort-indicator"></span>
+              </th>
+              <th class="sortable" data-sort-field="remaining_weight_g" style="cursor: pointer; width: 100px;">
+                Residuo (g)
+                <span class="sort-indicator"></span>
+              </th>
+              <th class="sortable" data-sort-field="spools_total" style="cursor: pointer; width: 70px;">
+                Rotoli
+                <span class="sort-indicator"></span>
+              </th>
+              <th class="sortable" data-sort-field="percentage" style="cursor: pointer; width: 230px;">
+                Barra residuo
+                <span class="sort-indicator"></span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="spoolsStateTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                Nessun filamento disponibile
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Check finale per organizzazione armadio -->
+  <section id="checkFinaleSection" style="margin-top: 2rem; padding: 1.5rem; background: var(--surface); border-radius: 1rem; border: 2px solid var(--accent);">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+      </span>
+      ✅ Check finale - Organizzazione armadio
+    </h2>
+    <p style="margin-bottom: 1rem; color: var(--text-muted);">
+      Seleziona i filamenti man mano che li metti a posto. Scegli la posizione e conferma per aggiornare il magazzino.
+    </p>
+    
+    <!-- Campo di ricerca e filtro -->
+    <div style="margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center;">
+      <div style="position: relative; flex: 1;">
+        <input
+          type="text"
+          id="checkFinaleSearch"
+          placeholder="Cerca filamento (marca, materiale, colore, posizione...)"
+          style="flex: 1; padding: 0.75rem 2.5rem 0.75rem 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: var(--surface-soft); color: var(--text-main); font-size: 0.9rem; width: 100%; box-sizing: border-box;"
+        />
+        <button
+          type="button"
+          id="checkFinaleSearchClear"
+          class="search-clear-btn"
+          style="display: none;"
+          title="Cancella ricerca"
+        >
+          <svg viewBox="0 0 24 24" fill="none" style="width: 16px; height: 16px;">
+            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <button
+        type="button"
+        id="checkFinaleTogglePlaced"
+        class="btn-secondary btn-xs"
+        title="Mostra/nascondi bobine già posizionate"
+        style="white-space: nowrap;"
+      >
+        <svg viewBox="0 0 24 24" fill="none" style="width: 14px; height: 14px;">
+          <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        <span>Mostra posizionate</span>
+      </button>
+    </div>
+    
+    <!-- Tabella -->
+    <div class="history-table-wrapper" style="margin-top: 0.5rem; max-height: 70vh; overflow-y: auto;">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th class="sortable" data-sort-field="has_location" style="cursor: pointer; width: 50px;">
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="brand" style="cursor: pointer; width: 120px;">
+              Marca
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="material" style="cursor: pointer; width: 110px;">
+              Materiale
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="variant" style="cursor: pointer; width: 170px;">
+              Colore
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="spools_total" style="cursor: pointer; width: 70px;">
+              Bobine
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="remaining_weight_g" style="cursor: pointer; width: 100px;">
+              Residuo (g)
+              <span class="sort-indicator"></span>
+            </th>
+            <th class="sortable" data-sort-field="location" style="cursor: pointer; width: 120px;">
+              Posizione
+              <span class="sort-indicator"></span>
+            </th>
+            <th style="width: 220px;">Azioni</th>
+          </tr>
+        </thead>
+        <tbody id="checkFinaleTableBody">
+          <tr>
+            <td colspan="8" style="text-align:center;color:var(--text-muted);">Nessun filamento disponibile</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Visualizzazione grafica box e scaffali -->
+  <section id="storageVisualizationSection" style="margin-top: 2rem; padding: 1.5rem; background: var(--surface); border-radius: 1rem; border: 2px solid var(--accent);">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M3 9h18M3 15h18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M9 9v6M15 9v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
+      📦 Visualizzazione Magazzino
+    </h2>
+    <p style="margin-bottom: 1rem; color: var(--text-muted);">
+      Visualizza graficamente dove sono posizionate le tue bobine nei box e sugli scaffali.
+    </p>
+    
+    <div id="storageVisualizationContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-top: 1rem;">
+      <!-- I contenitori verranno aggiunti dinamicamente qui -->
+    </div>
+  </section>
+
+  <!-- 5. Storico e Grafici Consumi -->
+  <section id="consumptionChartSection">
+    <h2>
+      <span class="section-title-icon">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 19h16M4 15l4-4 4 4 8-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="20" cy="7" r="2" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+      </span>
+      5. Storico Consumi
+    </h2>
+    <p>
+      Ogni volta che aggiorni lo stato di un filamento, il sistema registra i grammi consumati.
+      Qui puoi visualizzare l'andamento dei consumi nel tempo.
+    </p>
+
+    <!-- Calcolo consumi per differenza (Acquistato - Presente) -->
+    <details style="margin-top: 1rem; margin-bottom: 1rem;">
+      <summary style="cursor: pointer; padding: 0.75rem; background: var(--surface); border-radius: 0.5rem; font-weight: 600;">
+        📊 Calcolo consumi per differenza (Acquistato - Presente)
+      </summary>
+      <div style="margin-top: 1rem;">
+        <p class="hint" style="margin-bottom: 0.75rem;">
+          Questo calcolo confronta il materiale acquistato (da fatture/ordini) con quello presente in magazzino.
+          La differenza rappresenta il materiale consumato.
+        </p>
+        <div id="consumptionByDifferenceContainer" style="margin-top: 0.5rem;">
+          <div class="empty-state">
+            <div class="empty-state-text">Calcolo in corso...</div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Statistiche rapide -->
+    <div class="consumption-stats" id="consumptionStats">
+      <div class="consumption-stat-card">
+        <div class="consumption-stat-value" id="statTotalConsumed">0 g</div>
+        <div class="consumption-stat-label">Totale consumato</div>
+      </div>
+      <div class="consumption-stat-card">
+        <div class="consumption-stat-value" id="statThisMonth">0 g</div>
+        <div class="consumption-stat-label">Questo mese</div>
+      </div>
+      <div class="consumption-stat-card">
+        <div class="consumption-stat-value" id="statAvgPerDay">0 g</div>
+        <div class="consumption-stat-label">Media giornaliera</div>
+      </div>
+      <div class="consumption-stat-card">
+        <div class="consumption-stat-value" id="statEntries">0</div>
+        <div class="consumption-stat-label">Registrazioni</div>
+      </div>
+    </div>
+
+    <!-- Grafico consumi -->
+    <div class="chart-container">
+      <div class="chart-header">
+        <div class="chart-title">📊 Consumi nel tempo</div>
+        <div class="chart-controls">
+          <button type="button" id="chartView7d" class="active">7 giorni</button>
+          <button type="button" id="chartView30d">30 giorni</button>
+          <button type="button" id="chartViewAll">Tutto</button>
+        </div>
+      </div>
+      <div class="chart-svg-wrapper">
+        <div id="consumptionChartContainer"></div>
+      </div>
+      <div class="chart-legend" id="chartLegend"></div>
+    </div>
+
+    <!-- Storico dettagliato -->
+    <details style="margin-top: 1rem;">
+      <summary style="cursor: pointer; padding: 0.5rem; background: var(--surface); border-radius: 0.5rem; font-weight: 600;">
+        📋 Storico dettagliato consumi
+      </summary>
+      <div class="history-table-wrapper" style="margin-top: 0.5rem;">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Data/Ora</th>
+              <th>Filamento (Marca - Materiale - Colore)</th>
+              <th>g consumati</th>
+              <th>Azione</th>
+            </tr>
+          </thead>
+          <tbody id="consumptionHistoryBody">
+            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Nessun consumo registrato</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="buttons-row" style="margin-top: 0.5rem;">
+        <button type="button" class="btn-xs btn-danger" id="clearConsumptionHistory">
+          Cancella storico consumi
+        </button>
+      </div>
+    </details>
+  </section>
+</main>
+
+<!-- Modal consumo -->
+<div id="modalOverlay" class="modal-overlay"></div>
+<div id="consumptionModal" class="modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M5.5 6.5A1.5 1.5 0 0 1 7 5h10a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 17 19H7a1.5 1.5 0 0 1-1.5-1.5v-11Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+          <path
+            d="M9 9h4.5M9 12h3"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+          />
+        </svg>
+        Aggiorna stato rotolo
+      </div>
+      <button
+        type="button"
+        class="modal-close-btn btn-outline btn-xs"
+        id="modalCloseButton"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p id="consumptionInfo" style="font-size: 0.85rem; margin-bottom: 0.4rem">
+      –
+    </p>
+
+    <div class="grid">
+      <label>
+        Bobine totali (fisse)
+        <input
+          type="number"
+          id="consumptionSpoolsTotal"
+          readonly
+          style="opacity: 0.8"
+        />
+      </label>
+
+      <label>
+        Bobine nuove (sigillate)
+        <input
+          type="number"
+          id="consumptionSealedInput"
+          min="0"
+          step="1"
+        />
+      </label>
+
+      <label>
+        Bobine aperte
+        <input
+          type="number"
+          id="consumptionOpenInput"
+          min="0"
+          step="1"
+        />
+      </label>
+
+      <label>
+        Quanta plastica resta sulla bobina più consumata?
+        <select id="consumptionFractionSelect">
+          <option value="1">Piena (4/4)</option>
+          <option value="0.75">3/4</option>
+          <option value="0.5">Metà (2/4)</option>
+          <option value="0.25">1/4</option>
+          <option value="0">Finita (0/4)</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- Sezione per scegliere quale bobina eliminare -->
+    <div id="spoolDeletionSection" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface-soft); border-radius: 0.5rem; display: none;">
+      <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-main);">Seleziona quale bobina eliminare:</h4>
+      <div id="spoolDeletionList" style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <!-- Le bobine verranno aggiunte dinamicamente qui -->
+      </div>
+    </div>
+
+    <div class="hint">
+      Se hai più bobine aperte, indica qui quella più consumata. Le altre
+      vengono considerate piene. Se riduci il numero di bobine, seleziona quale eliminare.
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="modalCancelButton">
+        Annulla
+      </button>
+      <button type="button" id="modalConfirmButton">
+        Conferma aggiornamento
+      </button>
+    </div>
+
+    <input type="hidden" id="consumptionFilamentId" />
+  </div>
+</div>
+
+<!-- Modal per eliminare bobine -->
+<div id="deleteSpoolsModal" class="modal">
+  <div class="modal-dialog" style="max-width: 600px;">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none" style="width: 20px; height: 20px;">
+          <path d="M6.5 7.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M9 7.5V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M9.5 11v5M14.5 11v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <rect x="7.5" y="7.5" width="9" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
+        </svg>
+        <span>Elimina bobine</span>
+      </div>
+      <button type="button" class="modal-close" onclick="closeModalCentered('deleteSpoolsModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="deleteSpoolsModalDescription" style="margin-bottom: 1rem; color: var(--text-main);"></p>
+      
+      <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-main);">
+        Quante bobine vuoi eliminare?
+      </label>
+      <input 
+        type="number" 
+        id="deleteSpoolsCount" 
+        min="1" 
+        value="1" 
+        style="width: 100%; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: var(--surface-soft); color: var(--text-main); margin-bottom: 1rem;"
+      />
+      
+      <div id="deleteSpoolsSelectionSection" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface-soft); border-radius: 0.5rem; display: none;">
+        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem; color: var(--text-main);">Seleziona quali bobine eliminare:</h4>
+        <div id="deleteSpoolsSelectionList" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Le bobine verranno aggiunte dinamicamente qui -->
+        </div>
+      </div>
+      
+      <input type="hidden" id="deleteSpoolsFilamentId" />
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" onclick="closeModalCentered('deleteSpoolsModal')">
+        Annulla
+      </button>
+      <button type="button" id="deleteSpoolsConfirmButton" class="btn-danger">
+        Elimina bobine
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal per modificare un filamento esistente -->
+<div id="editFilamentModal" class="modal">
+  <div class="modal-dialog" style="max-width: 600px;">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M16.474 5.408l2.118 2.118M18 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M13.5 6.5l4 4M8 16l4.879-4.879a.5.5 0 0 1 .707 0l3.293 3.293" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Visualizza / Modifica filamento
+      </div>
+      <button type="button" class="modal-close-btn btn-outline btn-xs" id="editModalCloseButton">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <p id="editFilamentInfo" style="font-size: 0.85rem; margin-bottom: 0.6rem">–</p>
+
+      <div class="grid">
+        <label>
+          Colore / variante
+          <div id="editColorDropdownContainer"></div>
+          <input type="text" id="editColorCustom" placeholder="Oppure inserisci nuovo colore..." style="margin-top: 0.25rem; display: none;" />
+        </label>
+
+        <label>
+          Anteprima colore
+          <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: var(--surface); border-radius: 0.5rem;">
+            <span id="editColorPreviewDot" style="width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border-subtle);"></span>
+            <span id="editColorPreviewLabel" style="font-size: 0.85rem;">Nessun colore</span>
+          </div>
+        </label>
+
+        <label>
+          Codice colore
+          <input type="text" id="editColorCodeInput" placeholder="Es. 10101" />
+        </label>
+
+        <label>
+          Grammi per bobina
+          <input type="number" id="editUnitWeightInput" min="1" step="1" />
+        </label>
+
+        <label>
+          Tipo confezionamento
+          <select id="editPackagingType">
+            <option value="spool">Con bobina (spool)</option>
+            <option value="refill">Ricarica (refill)</option>
+          </select>
+        </label>
+
+        <label>
+          Prezzo unitario (€)
+          <input type="number" id="editPriceInput" min="0" step="0.01" placeholder="Es. 23.50" />
+        </label>
+
+        <label>
+          Fornitore / negozio
+          <input type="text" id="editSupplierInput" placeholder="Es. Amazon, Bambu Lab EU..." />
+        </label>
+
+        <label>
+          Posizione
+          <select id="editLocationInput">
+            <!-- Le opzioni verranno aggiunte dinamicamente -->
+          </select>
+        </label>
+      </div>
+
+      <!-- Gestione bobine individuali -->
+      <div id="editSpoolsSection" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border-radius: 0.5rem;">
+        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem;">📦 Stato bobine</h4>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <label style="margin:0;">
+            <span style="font-size: 0.8rem;">Totali</span>
+            <input type="number" id="editSpoolsTotal" min="0" step="1" readonly style="background: var(--surface-soft); cursor: not-allowed; width: 100%;" />
+          </label>
+          <label style="margin:0;">
+            <span style="font-size: 0.8rem;">Sigillate</span>
+            <input type="number" id="editSpoolsSealed" min="0" step="1" style="width: 100%;" />
+          </label>
+          <label style="margin:0;">
+            <span style="font-size: 0.8rem;">Aperte</span>
+            <input type="number" id="editSpoolsOpen" min="0" step="1" style="width: 100%;" />
+          </label>
+        </div>
+        
+        <!-- Lista bobine sigillate individuali -->
+        <div id="editSealedSpoolsList" style="margin-top: 0.75rem; display: none;">
+          <h5 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">Posizione per ogni bobina sigillata:</h5>
+          <div id="editSealedSpoolsListContainer" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Le bobine verranno aggiunte dinamicamente qui -->
+          </div>
+        </div>
+        
+        <!-- Lista bobine aperte individuali -->
+        <div id="editOpenSpoolsList" style="margin-top: 0.75rem; display: none;">
+          <h5 style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">Frazione rimanente e posizione per ogni bobina aperta:</h5>
+          <div id="editOpenSpoolsListContainer" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Le bobine verranno aggiunte dinamicamente qui -->
+          </div>
+        </div>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.5rem 0 0 0;">
+          Grammi residui stimati: <strong id="editRemainingGrams">–</strong>
+        </p>
+      </div>
+
+      <!-- Campo Note -->
+      <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-subtle);">
+        <label>
+          Note
+          <textarea 
+            id="editNotesInput" 
+            placeholder="Aggiungi note personali su questo filamento..."
+            rows="4"
+            style="width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: var(--surface-soft); color: var(--text-main); font-family: inherit; font-size: 0.9rem; resize: vertical; min-height: 80px;"
+          ></textarea>
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="editModalCancelButton">Annulla</button>
+      <button type="button" id="editModalConfirmButton">Salva modifiche</button>
+    </div>
+
+    <input type="hidden" id="editFilamentId" />
+  </div>
+</div>
+
+<!-- Modal Aggiungi al magazzino -->
+<div id="addToStockModal" class="modal">
+  <div class="modal-dialog" style="max-width: 600px;">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        Aggiungi al magazzino
+      </div>
+      <button type="button" class="modal-close-btn btn-outline btn-xs" id="addToStockModalCloseButton">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <p id="addToStockInfo" style="font-size: 0.85rem; margin-bottom: 0.6rem">–</p>
+
+      <div class="grid">
+        <label>
+          Quantità bobine da aggiungere
+          <input type="number" id="addToStockQty" min="1" step="1" value="1" />
+        </label>
+
+        <label>
+          Bobine sigillate
+          <input type="number" id="addToStockSealed" min="0" step="1" value="1" />
+        </label>
+
+        <label>
+          Bobine aperte
+          <input type="number" id="addToStockOpen" min="0" step="1" value="0" />
+        </label>
+      </div>
+
+      <!-- Gestione bobine aperte individuali -->
+      <div id="addToStockOpenSpoolsSection" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border-radius: 0.5rem; display: none;">
+        <h4 style="margin: 0 0 0.75rem 0; font-size: 0.9rem;">📦 Frazione rimanente per ogni bobina aperta:</h4>
+        <div id="addToStockOpenSpoolsListContainer" style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <!-- Le bobine verranno aggiunte dinamicamente qui -->
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 1rem;">
+        <label>
+          Prezzo unitario (€)
+          <input type="number" id="addToStockPrice" min="0" step="0.01" placeholder="Es. 23.50" />
+        </label>
+
+        <label>
+          Fornitore / negozio
+          <input type="text" id="addToStockSupplier" placeholder="Es. Amazon, Bambu Lab EU..." />
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="addToStockModalCancelButton">Annulla</button>
+      <button type="button" id="addToStockModalConfirmButton">Aggiungi al magazzino</button>
+    </div>
+
+    <input type="hidden" id="addToStockPurchasedId" />
+  </div>
+</div>
+
+<!-- Impostazioni / reset dati -->
+<div id="settingsModal" class="modal">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+          />
+          <path
+            d="M5.5 12a6.5 6.5 0 0 1 .09-1.08l-1.6-1.23a.7.7 0 0 1-.15-.9l1.52-2.64a.7.7 0 0 1 .86-.31l1.9.73A6.5 6.5 0 0 1 9.86 5h4.28c.39 0 .73.26.86.63l.73 1.9 1.9-.73a.7.7 0 0 1 .86.31l1.52 2.64a.7.7 0 0 1-.15.9l-1.6 1.23c.06.36.09.72.09 1.08s-.03.72-.09 1.08l1.6 1.23c.3.23.39.65.15.97l-1.52 2.64a.7.7 0 0 1-.86.31l-1.9-.73-.73 1.9a.9.9 0 0 1-.86.63H9.86a.9.9 0 0 1-.86-.63l-.73-1.9-1.9.73a.7.7 0 0 1-.86-.31L3.99 15.3a.7.7 0 0 1 .15-.9l1.6-1.23A6.5 6.5 0 0 1 5.5 12Z"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        Impostazioni & reset dati
+      </div>
+      <button
+        type="button"
+        class="modal-close-btn btn-outline btn-xs"
+        id="settingsCloseButton"
+      >
+        ✕
+      </button>
+    </div>
+
+    <p style="font-size: 0.85rem; margin-bottom: 0.4rem">
+      Qui puoi gestire i dati salvati nel browser. Le operazioni sono
+      locali e non inviano nulla in rete.
+    </p>
+
+    <div class="buttons-row" style="margin-top: 0.5rem">
+      <button type="button" class="btn-secondary" id="btnClearPurchasedOnly">
+        Cancella magazzino filamenti comprati
+      </button>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 0.25rem">
+      <button type="button" class="btn-secondary" id="btnClearAvailableOnly">
+        Cancella magazzino filamenti disponibili
+      </button>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 0.25rem">
+      <button type="button" class="btn-danger" id="btnClearAllData">
+        Cancella TUTTI i dati
+      </button>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; font-weight: 600;">Gestione posizioni</h3>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+        Aggiungi, rimuovi o rinomina le posizioni di stoccaggio (box, scaffali, ecc.)
+      </p>
+      <div id="locationsListContainer" style="margin-bottom: 0.75rem;">
+        <!-- Le posizioni verranno aggiunte dinamicamente qui -->
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <input 
+          type="text" 
+          id="newLocationInput" 
+          placeholder="Nome nuova posizione..." 
+          style="flex: 1; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: var(--surface-soft);"
+        />
+        <button type="button" class="btn-secondary btn-xs" id="addLocationButton">
+          <svg viewBox="0 0 24 24" fill="none" style="width: 14px; height: 14px;">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span>Aggiungi</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; font-weight: 600;">Allarme bobine in esaurimento</h3>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+        Imposta la percentuale residua sotto la quale ricevere una notifica all'avvio del programma.
+      </p>
+      <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 0.25rem;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Soglia allarme (%)</span>
+          <input 
+            type="number" 
+            id="lowStockThresholdInput" 
+            min="0" 
+            max="100" 
+            step="5"
+            style="padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--border-subtle); background: var(--surface-soft); color: var(--text-main);"
+          />
+        </label>
+        <button type="button" class="btn-secondary btn-xs" id="saveThresholdButton" style="align-self: flex-end; margin-top: 1.25rem;">
+          <span>Salva</span>
+        </button>
+      </div>
+      <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0; font-style: italic;">
+        Esempio: se imposti 25%, verranno mostrate tutte le bobine con meno del 25% di filamento residuo.
+      </p>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+      <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem; font-weight: 600;">Cronologia azioni</h3>
+      <div id="historyList" style="max-height: 200px; overflow-y: auto; background: var(--surface-soft); border-radius: 0.5rem; border: 1px solid var(--border-subtle);">
+        <!-- La cronologia verrà aggiunta dinamicamente -->
+      </div>
+    </div>
+
+    <div class="buttons-row" style="margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+      <button type="button" class="btn-secondary" id="btnDebugInfo" style="width: 100%;">
+        🔍 Mostra informazioni debug
+      </button>
+    </div>
+    <div id="debugInfoContainer" style="margin-top: 1rem; padding: 1rem; background: var(--surface-soft); border-radius: 0.5rem; display: none;">
+      <pre id="debugInfoText" style="margin: 0; font-size: 0.75rem; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto;"></pre>
+      <button type="button" class="btn-xs btn-secondary" id="btnCopyDebugInfo" style="margin-top: 0.5rem;">
+        📋 Copia informazioni
+      </button>
+    </div>
+
+    <p class="hint" style="margin-top: 0.6rem">
+      Attenzione: le cancellazioni non sono reversibili. Prima di svuotare
+      tutto puoi esportare un JSON di backup dal pulsante "Esporta JSON".
+    </p>
+
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="settingsCancelButton">
+        Chiudi
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal resoconto bobine in esaurimento -->
+<div id="lowStockReportModal" class="modal">
+  <div class="modal-dialog" style="max-width: 700px;">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg viewBox="0 0 24 24" fill="none" style="width: 24px; height: 24px;">
+          <path d="M12 9v4M12 17h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        ⚠️ Resoconto Bobine in Esaurimento
+      </div>
+      <button type="button" class="modal-close-btn btn-outline btn-xs" id="lowStockReportCloseButton">
+        ✕
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size: 0.9rem; margin-bottom: 1rem; color: var(--text-muted);">
+        Le seguenti bobine hanno un residuo inferiore alla soglia impostata (<span id="lowStockReportThreshold"></span>%).
+      </p>
+      <div id="lowStockReportList" style="max-height: 400px; overflow-y: auto;">
+        <!-- Le bobine verranno aggiunte dinamicamente qui -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" id="lowStockReportCloseBtn">
+        Chiudi
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
