@@ -1,6 +1,6 @@
   const STORAGE_KEY = "registroFilamentiState_v3";
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.101";
+  const INITIAL_VERSION = "V.102";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -1347,6 +1347,22 @@
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals
     });
+  }
+
+  const STOCK_THRESHOLD_LOW = 0.25;
+  const STOCK_THRESHOLD_MED = 0.5;
+
+  // Restituisce colore e classe per le barre di stock in base al ratio residuo (0..1)
+  // Soglie: verde > 50%, giallo 25-50%, rosso <= 25%
+  function getStockBarStyle(ratio) {
+    const styles = getComputedStyle(document.documentElement);
+    if (ratio <= STOCK_THRESHOLD_LOW) {
+      return { color: styles.getPropertyValue("--gf-red").trim() || "#F2495C", cls: "low-stock" };
+    }
+    if (ratio <= STOCK_THRESHOLD_MED) {
+      return { color: styles.getPropertyValue("--gf-yellow").trim() || "#FADE2A", cls: "medium-stock" };
+    }
+    return { color: styles.getPropertyValue("--gf-green").trim() || "#73BF69", cls: "high-stock" };
   }
 
   function getColorHex(colorName) {
@@ -5189,16 +5205,7 @@
       const packagingLabel = f.packaging_type === "refill" ? "Ricarica" : "Bobina";
       const priceDisplay = f.unit_price != null ? "€" + formatNumber(f.unit_price, 2) : "-";
         
-        // Determina il colore della barra in base alla percentuale
-        let barColor = "#22c55e"; // Verde (alto)
-        let barClass = "high-stock";
-        if (ratio <= 0.25) {
-          barColor = "#ef4444"; // Rosso (basso)
-          barClass = "low-stock";
-        } else if (ratio <= 0.5) {
-          barColor = "#f59e0b"; // Giallo/Arancio (medio)
-          barClass = "medium-stock";
-        }
+        const { color: barColor, cls: barClass } = getStockBarStyle(ratio);
         
         // Crea l'HTML della barra
         const barHtml = `
@@ -5635,13 +5642,7 @@
       const ratio = group.totalWeight > 0 ? group.remainingWeight / group.totalWeight : 0;
       const percentage = Math.max(0, Math.min(100, Math.round(ratio * 100)));
       
-      // Determina il colore della barra
-      let barColor = "#22c55e"; // Verde (alto)
-      if (ratio <= 0.25) {
-        barColor = "#ef4444"; // Rosso (basso)
-      } else if (ratio <= 0.5) {
-        barColor = "#f59e0b"; // Giallo/Arancio (medio)
-      }
+      const { color: barColor } = getStockBarStyle(ratio);
       
       const barHtml = `
         <div style="display: flex; align-items: center; gap: 0.5rem; width: 100%;">
@@ -6143,8 +6144,7 @@
         const progressContainer = document.createElement("div");
         progressContainer.style.cssText = "margin-top: auto; padding-top: 0.5rem; border-top: 1px solid var(--border-subtle);";
         
-        // Usa il colore della bobina per la barra di progresso
-        const progressColor = colorHex;
+        const { color: progressColor } = getStockBarStyle(fraction);
         
         const progressBarWrapper = document.createElement("div");
         progressBarWrapper.style.cssText = "background: rgba(15, 23, 42, 0.6); border-radius: 999px; overflow: hidden; height: 8px; margin-bottom: 0.4rem; position: relative;";
@@ -6296,16 +6296,7 @@
     rowsToSort.forEach((group) => {
       const tr = document.createElement("tr");
       
-      // Determina il colore della barra in base alla percentuale
-      let barColor = "#22c55e"; // Verde (alto)
-      let barClass = "high-stock";
-      if (group.ratio <= 0.25) {
-        barColor = "#ef4444"; // Rosso (basso)
-        barClass = "low-stock";
-      } else if (group.ratio <= 0.5) {
-        barColor = "#f59e0b"; // Giallo/Arancio (medio)
-        barClass = "medium-stock";
-      }
+      const { color: barColor, cls: barClass } = getStockBarStyle(group.ratio);
       
       // Crea l'HTML della barra
       const barHtml = `
