@@ -22,15 +22,15 @@
       --warning: #f59e0b;
       --warning-soft: rgba(245, 158, 11, 0.18);
 
-      --bg: radial-gradient(circle at top, #020617 0, #020617 40%, #020617 100%);
-      --surface: rgba(15, 23, 42, 0.8);
-      --surface-soft: rgba(15, 23, 42, 0.8);
-      --surface-strong: #020617;
-      --border-subtle: rgba(148, 163, 184, 0.45);
-      --border-strong: rgba(15, 23, 42, 0.9);
-      --text-main: #e5e7eb;
-      --text-muted: #9ca3af;
-      --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.7);
+      --bg: #111217;
+      --surface: #181B1F;
+      --surface-soft: #1D2025;
+      --surface-strong: #22252B;
+      --border-subtle: rgba(204, 204, 220, 0.12);
+      --border-strong: rgba(204, 204, 220, 0.25);
+      --text-main: #D8D9DA;
+      --text-muted: #8E8E8E;
+      --shadow-soft: 0 4px 16px rgba(0, 0, 0, 0.35);
 
       --radius-lg: 0.75rem;
       --radius-md: 0.65rem;
