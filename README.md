@@ -1,42 +1,49 @@
-# 🧵 Registro Filamenti 3D
+# Registro Filamenti 3D — V.104
 
-Web app locale per la gestione completa dell'inventario filamenti per stampa 3D (Bambu Lab e altri brand).
+Applicazione locale per acquisti, magazzino, bobine e consumi di filamento. Apri `index.html` nel browser: non servono installazione, server o connessione a Internet.
 
-## 🚀 Avvio
+## Aggiornamento e dati
 
-Apri `index.html` nel browser. Fine. 😊
+Prima di aggiornare conserva un export JSON dal browser che contiene il tuo registro. I dati sono nel browser, **non nella cartella dell'app né su GitHub**. Cambiare browser, profilo, percorso `file://` o indirizzo di un server locale può mostrare un registro diverso o vuoto: in quel caso importa il backup, senza cancellare quello precedente.
 
-Nessuna installazione, nessun server: i dati vivono nel localStorage del browser e si esportano/importano come JSON.
+V.104 legge i backup precedenti, incluso il formato V318. Il salvataggio usa ancora la chiave `registroFilamentiState_v3`, con un formato interno identificato da `schemaVersion: 4`. La versione dell'app resta V.104; la revisione dei dati aumenta separatamente.
 
-## 📂 Struttura
+- **Esporta JSON** crea una copia dello stato corrente, comprendendo inventario, acquisti, consumi, cataloghi, posizioni e impostazioni. La cronologia di annullamento rimane nel browser e non gonfia il file di backup.
+- **Ripristina backup** sostituisce l'intero registro dopo validazione e conferma. Accetta anche un inventario vuoto. Un file non valido non modifica lo stato.
+- **Importa fatture** aggiunge acquisti; non è un ripristino del registro. I numeri con virgola decimale sono supportati e le quantità non valide vengono rifiutate.
+- Un salvataggio non riuscito viene segnalato. Un registro corrotto o modificato da un'altra scheda non viene sovrascritto automaticamente: esporta la copia di recupero o le modifiche prima di ricaricare.
+- Il browser conserva, quando lo spazio lo consente, anche la copia precedente in `registroFilamentiState_v3_lastGood`. Questa protezione locale non sostituisce un backup JSON conservato altrove.
 
-| Percorso | Contenuto |
-|----------|-----------|
-| `index.html` + `app.js` + `styles.css` | **L'applicazione** (versione attiva) |
-| `dati/` | Ultimo export JSON dei dati reali (per test e ripristino) |
-| `fatture/` | PDF fatture Bambu Lab originali |
-| `docs/` | Briefing per AI (Cursor), prompt storici |
-| `archivio/` | Versioni precedenti e refactoring sperimentali (solo storico) |
+## Funzionalità
 
-## ✨ Funzionalità principali
+- Dashboard, ricerca, filtri e ordinamento del magazzino.
+- Inserimento manuale e importazione di fatture JSON.
+- Bobine sigillate, aperte e finite; colore, posizione e residuo individuali.
+- Trasferimenti dagli acquisti al magazzino senza creare falsi consumi.
+- Storico consumi, grafici SVG e bilancio delle quantità.
+- Annulla/Ripristina delle operazioni con dati e storico coerenti.
+- Soglia scorte configurabile, inventario fisico e vista delle posizioni.
+- Tema chiaro/scuro, finestre trascinabili e interfaccia adattata a schermi piccoli.
 
-- 📊 Dashboard con KPI (rotoli totali, grammi residui, valore magazzino)
-- ➕ Aggiunta manuale + import automatico da fatture Bambu Lab (JSON)
-- 📦 Magazzino con filtri multi-select, ricerca, stato bobine individuali
-- 🎯 Check finale inventario fisico e visualizzazione posizioni scaffali
-- 📈 Grafici consumi nel tempo (Chart.js)
-- ⚠️ Report scorte basse con soglia configurabile
-- ↩️ Undo/Redo persistente, tema light/dark, export/import JSON
+I vecchi backup non contengono necessariamente tutta la storia degli acquisti o dei consumi. La migrazione conserva le quantità disponibili; non inventa date o movimenti mancanti. Il bilancio distingue la massa iniziale registrata dai consumi documentati nello storico.
 
-## 🛠 Stack
+## Sviluppo e verifiche
 
-Vanilla HTML/CSS/JavaScript — zero dipendenze, zero build, offline-first.
+Solo HTML, CSS e JavaScript vanilla, senza dipendenze o compilazione dell'app. I file attivi sono `index.html`, `app.js` e `styles.css`. `archivio/` contiene esclusivamente versioni storiche; `dati/` e `fatture/` sono riferimenti esistenti.
 
-## 🤖 Sviluppo con AI
+Con Node.js 22 o successivo:
 
-- **Orchestratore**: Claude (analisi, architettura, task definition, review)
-- **Implementatore**: Cursor (modifiche al codice) — regole in `.cursorrules`, contesto in `docs/CURSOR_BRIEFING.md`
+```text
+node --check app.js
+node --test tests/data.test.cjs tests/domain.test.cjs tests/mutation.test.cjs
+```
 
-## 📌 Versionamento
+Questi controlli sono eseguiti anche su GitHub. La suite facoltativa `tests/browser.test.cjs` richiede Playwright e Chromium già disponibili nell'ambiente di test; non aggiunge dipendenze all'app. `PLAYWRIGHT_MODULE` può indicare il modulo installato e `CHROMIUM_EXECUTABLE` il browser. Ogni prova usa un contesto nuovo, dati sintetici o una copia del backup di riferimento e un server locale temporaneo.
 
-La versione parte da `INITIAL_VERSION` in `app.js` e si auto-incrementa nel localStorage ad ogni salvataggio. Gli export si chiamano `registro_filamenti_YYYY-MM-DD_Vxxx.json`.
+```text
+node --test tests/browser.test.cjs
+```
+
+Per una verifica pratica: importa una copia del backup, modifica una bobina e annulla; esporta e ripristina; prova filtri, trascinamento delle finestre e tema chiaro/scuro. Esegui queste prove in un profilo dedicato, separato dal registro personale.
+
+Le note della versione sono in [docs/V104.md](docs/V104.md). Le convenzioni di lavoro sono in `.cursorrules` e `docs/CURSOR_BRIEFING.md`.

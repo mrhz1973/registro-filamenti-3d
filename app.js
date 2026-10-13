@@ -1,6 +1,13 @@
   const STORAGE_KEY = "registroFilamentiState_v3";
+  // Escape solo in uscita: i dati originali restano testo, anche se contengono HTML.
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]);
+  }
+
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.103";
+  const INITIAL_VERSION = "V.104";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -21,44 +28,11 @@
 
   // Salva gli stack undo/redo nel localStorage
   function saveUndoRedoStacks() {
-    try {
-      localStorage.setItem(UNDO_STACK_KEY, JSON.stringify(undoStack));
-      localStorage.setItem(REDO_STACK_KEY, JSON.stringify(redoStack));
-    } catch (e) {
-      console.error("Errore nel salvataggio degli stack undo/redo:", e);
-    }
+    autoSave(); // Gli stack sono salvati insieme al registro, senza chiavi divergenti.
   }
 
-  // Carica gli stack undo/redo dal localStorage
   function loadUndoRedoStacks() {
-    try {
-      const undoRaw = localStorage.getItem(UNDO_STACK_KEY);
-      const redoRaw = localStorage.getItem(REDO_STACK_KEY);
-      
-      if (undoRaw) {
-        undoStack = JSON.parse(undoRaw);
-        // Limita la dimensione
-        if (undoStack.length > MAX_UNDO_HISTORY) {
-          undoStack = undoStack.slice(-MAX_UNDO_HISTORY);
-        }
-      } else {
-        undoStack = [];
-      }
-      
-      if (redoRaw) {
-        redoStack = JSON.parse(redoRaw);
-        // Limita la dimensione
-        if (redoStack.length > MAX_UNDO_HISTORY) {
-          redoStack = redoStack.slice(-MAX_UNDO_HISTORY);
-        }
-      } else {
-        redoStack = [];
-      }
-    } catch (e) {
-      console.error("Errore nel caricamento degli stack undo/redo:", e);
-      undoStack = [];
-      redoStack = [];
-    }
+    // loadState ha già ripristinato gli stack validati dello stesso snapshot.
   }
 
   // Funzione per riprodurre un suono di conferma
@@ -132,162 +106,133 @@
   // Storico consumi
   let consumptionHistory = [];
 
-  // Helper per aprire modal centrati sullo schermo
+  // Stato UI delle finestre: nessuna modifica ai dati del registro.
+  const modalStack = [];
+  const modalBackgroundState = new Map();
+  let modalBodyOverflow = "";
+
+  function modalFocusableElements(modal) {
+    const selector = "button, input:not([type='hidden']), select, textarea, a[href], [tabindex='0']";
+    const roots = [modal];
+    if (activeColorDropdown && modal.contains(activeColorDropdown)) roots.push(activeColorDropdown._colorMenu);
+    return roots.flatMap(root => root ? Array.from(root.querySelectorAll(selector)) : [])
+      .filter(el => !el.disabled && !el.closest("[hidden], [inert]") && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden");
+  }
+
   function openModalCentered(modalId) {
     const modal = document.getElementById(modalId);
     const overlay = document.getElementById("modalOverlay");
-    
-    if (modal) {
-      // Salva la posizione di scroll corrente PRIMA di aprire il modal
-      savedScrollPosition = {
-        top: window.scrollY || window.pageYOffset || document.documentElement.scrollTop,
-        left: window.scrollX || window.pageXOffset || document.documentElement.scrollLeft
-      };
-      
-      // Reset posizione modal PRIMA di aprirlo
-      resetModalPosition(modalId);
-      
-      // Apri il modal
-      modal.classList.add("is-open");
-      
-      // Forza il reset DOPO che il modal è visibile e scrolla la pagina per centrare il dialog
-      requestAnimationFrame(() => {
-        resetModalPosition(modalId);
-        
-        // Scrolla la pagina per centrare il dialog (come fanno gli altri modal)
-        const dialog = modal.querySelector(".modal-dialog");
-        if (dialog) {
-          // Calcola la posizione del dialog rispetto alla pagina
-          const dialogRect = dialog.getBoundingClientRect();
-          const windowHeight = window.innerHeight;
-          const windowWidth = window.innerWidth;
-          
-          // Calcola dove dovrebbe essere il dialog per essere centrato
-          const targetTop = window.scrollY + dialogRect.top - (windowHeight / 2) + (dialogRect.height / 2);
-          
-          // Scrolla la pagina per centrare il dialog
-          window.scrollTo({
-            top: Math.max(0, targetTop),
-            left: window.scrollX,
-            behavior: 'smooth'
-          });
-        }
+    if (!modal || modal.classList.contains("is-open")) return;
+    if (activeColorDropdown) closeColorDropdown(activeColorDropdown);
+    if (activeMultiSelectDropdown) activeMultiSelectDropdown.close();
+    if (modalStack.length === 0) {
+      savedScrollPosition = { top: window.scrollY, left: window.scrollX };
+      modalBodyOverflow = document.body.style.overflow;
+      document.querySelectorAll("body > header, body > main").forEach(el => {
+        modalBackgroundState.set(el, el.inert);
+        el.inert = true;
       });
-      
-      // NON bloccare lo scroll della pagina - permette di scrollare per trovare il modal
-      // document.body.style.overflow = "hidden"; // Rimosso per permettere scroll
+      document.body.style.overflow = "hidden";
     }
-    if (overlay) overlay.classList.add("is-open");
+    const previous = modalStack[modalStack.length - 1];
+    if (previous) previous.modal.inert = true;
+    modalStack.push({ modal, opener: document.activeElement });
+    resetModalPosition(modalId);
+    modal.hidden = false;
+    modal.inert = false;
+    modal.setAttribute("aria-modal", "true");
+    modal.classList.add("is-open");
+    if (overlay) { overlay.hidden = false; overlay.classList.add("is-open"); }
+    requestAnimationFrame(() => {
+      if (!modal.classList.contains("is-open")) return;
+      resetModalPosition(modalId);
+      (modalFocusableElements(modal)[0] || modal).focus({ preventScroll: true });
+    });
   }
 
   function closeModalCentered(modalId) {
     const modal = document.getElementById(modalId);
-    const overlay = document.getElementById("modalOverlay");
-    if (modal) modal.classList.remove("is-open");
-    
-    // Reset posizione modal
+    if (!modal || !modal.classList.contains("is-open")) return;
+    if (activeColorDropdown && modal.contains(activeColorDropdown)) closeColorDropdown(activeColorDropdown);
+    const index = modalStack.findIndex(entry => entry.modal === modal);
+    const entry = index >= 0 ? modalStack.splice(index, 1)[0] : null;
+    modal.classList.remove("is-open");
+    modal.hidden = true;
+    modal.inert = true;
+    modal.setAttribute("aria-modal", "false");
     resetModalPosition(modalId);
-    
-    // Chiudi overlay solo se nessun altro modal è aperto
-    setTimeout(() => {
-      const allOpenModals = document.querySelectorAll(".modal.is-open");
-      if (allOpenModals.length === 0) {
-        if (overlay) overlay.classList.remove("is-open");
-        document.body.style.overflow = ""; // Ripristina scroll pagina
-        
-        // Ripristina la posizione di scroll originale prima dell'apertura del modal
-        window.scrollTo({
-          top: savedScrollPosition.top,
-          left: savedScrollPosition.left,
-          behavior: 'smooth'
-        });
-      }
-    }, 10);
+    const previous = modalStack[modalStack.length - 1];
+    if (previous) {
+      previous.modal.inert = false;
+    } else {
+      const overlay = document.getElementById("modalOverlay");
+      if (overlay) { overlay.classList.remove("is-open"); overlay.hidden = true; }
+      modalBackgroundState.forEach((wasInert, el) => { el.inert = wasInert; });
+      modalBackgroundState.clear();
+      document.body.style.overflow = modalBodyOverflow;
+      window.scrollTo({ top: savedScrollPosition.top, left: savedScrollPosition.left, behavior: "instant" });
+    }
+    const opener = entry && entry.opener;
+    if (opener && opener.isConnected && !opener.closest("[hidden], [inert]")) {
+      opener.focus({ preventScroll: true });
+    } else if (previous) {
+      (modalFocusableElements(previous.modal)[0] || previous.modal).focus({ preventScroll: true });
+    }
   }
-  
-  // Funzionalità trascinamento modal
+
   function initDraggableModals() {
-    const modals = document.querySelectorAll(".modal-dialog");
-    
-    modals.forEach(dialog => {
-      const header = dialog.querySelector(".modal-header");
-      if (!header) return;
-      
-      let isDragging = false;
-      let startX, startY, initialX, initialY;
-      
-      header.addEventListener("mousedown", (e) => {
-        // Non trascinare se si clicca sul pulsante chiudi
-        if (e.target.closest(".modal-close-btn")) return;
-        
-        isDragging = true;
-        dialog.classList.add("is-dragging");
-        
+    document.querySelectorAll(".modal").forEach(modal => {
+      if (modal.dataset.uiReady) return;
+      modal.dataset.uiReady = "true";
+      modal.hidden = !modal.classList.contains("is-open");
+      modal.inert = modal.hidden;
+      modal.tabIndex = -1;
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", String(!modal.hidden));
+      const title = modal.querySelector(".modal-title");
+      if (title) { title.id ||= modal.id + "Title"; modal.setAttribute("aria-labelledby", title.id); }
+      modal.querySelectorAll(".modal-close-btn, .modal-close").forEach(button => button.setAttribute("aria-label", "Chiudi finestra"));
+      modal.addEventListener("click", event => { if (event.target === modal) closeModalCentered(modal.id); });
+      const dialog = modal.querySelector(".modal-dialog");
+      const header = modal.querySelector(".modal-header");
+      if (!dialog || !header) return;
+      let drag = null;
+      header.addEventListener("pointerdown", event => {
+        if (event.button !== 0 || event.target.closest("button, input, select, textarea, a")) return;
         const rect = dialog.getBoundingClientRect();
-        startX = e.clientX;
-        startY = e.clientY;
-        initialX = rect.left;
-        initialY = rect.top;
-        
-        // Rimuovi margin:auto per permettere posizionamento assoluto
-        dialog.style.margin = "0";
-        dialog.style.position = "fixed";
-        dialog.style.left = initialX + "px";
-        dialog.style.top = initialY + "px";
-        
-        e.preventDefault();
+        drag = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+        if (!dialog.classList.contains("is-positioned")) dialog._originalWidth = dialog.style.width;
+        dialog.classList.add("is-positioned", "is-dragging");
+        dialog.style.width = rect.width + "px";
+        dialog.style.left = rect.left + "px";
+        dialog.style.top = rect.top + "px";
+        header.setPointerCapture(event.pointerId);
+        event.preventDefault();
       });
-      
-      document.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-        
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
-        let newX = initialX + dx;
-        let newY = initialY + dy;
-        
-        // Limita ai bordi della finestra
-        const dialogRect = dialog.getBoundingClientRect();
-        newX = Math.max(0, Math.min(newX, window.innerWidth - dialogRect.width));
-        newY = Math.max(0, Math.min(newY, window.innerHeight - dialogRect.height));
-        
-        dialog.style.left = newX + "px";
-        dialog.style.top = newY + "px";
+      header.addEventListener("pointermove", event => {
+        if (!drag) return;
+        const rect = dialog.getBoundingClientRect();
+        dialog.style.left = Math.max(0, Math.min(drag.left + event.clientX - drag.x, innerWidth - rect.width)) + "px";
+        dialog.style.top = Math.max(0, Math.min(drag.top + event.clientY - drag.y, innerHeight - rect.height)) + "px";
       });
-      
-      document.addEventListener("mouseup", () => {
-        if (isDragging) {
-          isDragging = false;
-          dialog.classList.remove("is-dragging");
-        }
-      });
+      const endDrag = () => { drag = null; dialog.classList.remove("is-dragging"); };
+      header.addEventListener("pointerup", endDrag);
+      header.addEventListener("pointercancel", endDrag);
+      header.addEventListener("lostpointercapture", endDrag);
     });
   }
-  
-  // Reset posizione modal quando si chiude o si apre
+
   function resetModalPosition(modalId) {
     const modal = document.getElementById(modalId);
-    if (!modal) return;
-    const dialog = modal.querySelector(".modal-dialog");
+    const dialog = modal && modal.querySelector(".modal-dialog");
     if (!dialog) return;
-    
-    // Rimuovi TUTTE le proprietà di posizionamento inline per forzare il centraggio
-    dialog.removeAttribute("style");
-    
-    // Re-imposta solo le proprietà necessarie per il centraggio
-    dialog.style.margin = "auto";
-    dialog.style.position = "";
-    
-    // Scrolla il modal in cima
-    if (modal) {
-      modal.scrollTop = 0;
-      modal.scrollLeft = 0;
-    }
-    
-    // Forza il reflow per assicurarsi che le modifiche vengano applicate
-    void dialog.offsetHeight;
-    void modal.offsetHeight;
+    if (dialog.classList.contains("is-positioned")) dialog.style.width = dialog._originalWidth || "";
+    dialog.classList.remove("is-positioned", "is-dragging");
+    ["position", "left", "top", "right", "bottom", "margin"].forEach(name => dialog.style.removeProperty(name));
+    modal.scrollTop = 0;
+    const body = modal.querySelector(".modal-body");
+    if (body) body.scrollTop = 0;
+    dialog.scrollTop = 0;
   }
 
   const defaultBrands = [
@@ -1119,151 +1064,176 @@
     return bambuPriceMap[sku] || null;
   }
 
+  function captureDomainState() {
+    if (typeof captureStateSnapshot === "function") return captureStateSnapshot(true);
+    return JSON.parse(JSON.stringify({ filaments, purchasedFilaments, consumptionHistory, brandList, materialList, colorList, undoStack, redoStack }));
+  }
+
+  function commitDomainState(previous) {
+    if (saveState(true) !== false) return true;
+    if (typeof applyStateSnapshot === "function") applyStateSnapshot(previous, true);
+    else {
+      ({ filaments, purchasedFilaments, consumptionHistory, brandList, materialList, colorList, undoStack, redoStack } = previous);
+    }
+    renderAll();
+    showToast("Salvataggio non riuscito: la modifica non è stata applicata. I valori del modulo restano disponibili.", "error");
+    return false;
+  }
+
+  function createSpoolId() {
+    if (typeof makeStableId === "function") return makeStableId("bobina");
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    return "bobina-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  }
+
+  function requireSpoolNumber(value, label, integer = false) {
+    const number = typeof value === "number" ? value : Number(value);
+    if (value === null || value === "" || !Number.isFinite(number) || number < 0 || (integer && !Number.isSafeInteger(number))) {
+      throw new Error(label + ": inserisci un numero " + (integer ? "intero " : "") + "non negativo.");
+    }
+    return number;
+  }
+
+  // Converte una volta i vecchi conteggi senza cambiare la massa conservata.
+  function normalizeFilamentSpools(f) {
+    if (!f || typeof f !== "object") throw new Error("Filamento non valido.");
+    const unit = requireSpoolNumber(f.unit_weight_g, "Peso per bobina");
+    if (unit <= 0) throw new Error("Il peso per bobina deve essere maggiore di zero.");
+    const sealed = requireSpoolNumber(f.sealed_spools ?? 0, "Bobine sigillate", true);
+    const open = requireSpoolNumber(f.open_spools ?? 0, "Bobine aperte", true);
+    const historicalCount = requireSpoolNumber(f.spools_total ?? sealed + open, "Bobine totali", true);
+    const declaredFinished = requireSpoolNumber(f.finished_spools ?? 0, "Bobine terminate", true);
+    let finished = f.spool_state_version === 1 ? declaredFinished : Math.max(0, historicalCount - sealed - open);
+    const fractions = Array.isArray(f.open_spools_fractions) ? f.open_spools_fractions.slice(0, open) : [];
+    fractions.forEach(value => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) throw new Error("Frazione residua non valida.");
+    });
+    if (fractions.length < open) {
+      const missing = open - fractions.length;
+      const known = fractions.reduce((sum, value) => sum + value, 0);
+      let missingFraction;
+      if (Number.isFinite(f.remaining_weight_g)) {
+        missingFraction = f.remaining_weight_g / unit - sealed - known;
+        if (missingFraction < -0.000001 || missingFraction > missing + 0.000001) throw new Error("Residuo incompatibile con il numero di bobine.");
+        missingFraction = Math.max(0, Math.min(missing, missingFraction));
+      } else {
+        const main = f.main_fraction ?? 1;
+        if (!Number.isFinite(main) || main < 0 || main > 1) throw new Error("Frazione principale non valida.");
+        missingFraction = Math.max(0, missing - (f.spool_state_version === 1 ? 0 : declaredFinished) - 1) + main;
+        if (f.spool_state_version !== 1 && declaredFinished >= missing) missingFraction = 0;
+      }
+      // Le ultime bobine restano piene; la frazione parziale precede quelle piene.
+      for (let i = 0; i < missing; i++) fractions.push(Math.max(0, Math.min(1, missingFraction - (missing - i - 1))));
+    }
+    const locations = Array.isArray(f.spools_locations) ? f.spools_locations : [];
+    const variants = Array.isArray(f.spools_variants) ? f.spools_variants : [];
+    const ids = Array.isArray(f.spools_ids) ? f.spools_ids : [];
+    const active = [];
+    const seen = new Set();
+    for (let i = 0; i < sealed + open; i++) {
+      const fraction = i < sealed ? 1 : fractions[i - sealed];
+      if (fraction === 0) { finished++; continue; }
+      let id = typeof ids[i] === "string" && ids[i] ? ids[i] : createSpoolId();
+      if (seen.has(id)) id = createSpoolId();
+      seen.add(id);
+      active.push({ id, sealed: i < sealed, fraction, location: locations[i] ?? f.location ?? "", variant: variants[i] ?? f.variant ?? "" });
+    }
+    f.spool_state_version = 1;
+    f.finished_spools = finished;
+    f.sealed_spools = active.filter(spool => spool.sealed).length;
+    f.open_spools = active.length - f.sealed_spools;
+    f.spools_total = active.length + finished;
+    f.open_spools_fractions = active.filter(spool => !spool.sealed).map(spool => spool.fraction);
+    f.spools_locations = active.map(spool => spool.location);
+    f.spools_variants = active.map(spool => spool.variant);
+    f.spools_ids = active.map(spool => spool.id);
+    f.main_fraction = f.open_spools_fractions.length ? Math.min(...f.open_spools_fractions) : 1;
+    f.location = f.spools_locations.find(location => location) || "";
+    const previousTotal = f.total_weight_g == null ? 0 : requireSpoolNumber(f.total_weight_g, "Peso totale");
+    f.total_weight_g = Math.max(previousTotal, f.spools_total * unit);
+    return f;
+  }
+
+  function getActiveFilamentSpools(f) {
+    return (f.spools_ids || []).map((id, index) => ({
+      id,
+      sealed: index < f.sealed_spools,
+      fraction: index < f.sealed_spools ? 1 : f.open_spools_fractions[index - f.sealed_spools],
+      location: f.spools_locations[index] || "",
+      variant: f.spools_variants[index] || f.variant || ""
+    }));
+  }
+
+  function setActiveFilamentSpools(f, spools) {
+    const ordered = [...spools.filter(spool => spool.sealed), ...spools.filter(spool => !spool.sealed)];
+    f.sealed_spools = ordered.filter(spool => spool.sealed).length;
+    f.open_spools = ordered.length - f.sealed_spools;
+    f.spools_ids = ordered.map(spool => spool.id || createSpoolId());
+    f.spools_locations = ordered.map(spool => spool.location || "");
+    f.spools_variants = ordered.map(spool => spool.variant || f.variant || "");
+    f.open_spools_fractions = ordered.filter(spool => !spool.sealed).map(spool => spool.fraction);
+    f.spools_total = ordered.length + (f.finished_spools || 0);
+    return f;
+  }
+
+  function getFilamentIdentity(f) {
+    return JSON.stringify([
+      canonicalizeBrand(f.brand || "").toLowerCase(), canonicalizeMaterial(f.material || "").toLowerCase(),
+      String(f.variant || "").trim().toLowerCase(), String(f.color_code || "").trim().toLowerCase(),
+      f.unit_weight_g, f.packaging_type || "spool", f.unit_price ?? null, f.supplier || "", f.source_purchase_id || ""
+    ]);
+  }
+
+  function transferPurchasedSpools(purchasedId, quantity, sealed, fractions, price, supplier) {
+    const p = purchasedFilaments.find(entry => entry.id === purchasedId);
+    if (!p) throw new Error("Acquisto non trovato.");
+    const available = requireSpoolNumber(p.quantity_spools ?? p.quantitySpools ?? 0, "Quantità disponibile", true);
+    const qty = requireSpoolNumber(quantity, "Quantità", true);
+    const sealedCount = requireSpoolNumber(sealed, "Bobine sigillate", true);
+    if (qty < 1 || qty > available || sealedCount + fractions.length !== qty) throw new Error("Quantità di trasferimento non valida.");
+    const unit = requireSpoolNumber(p.unit_weight_g ?? 1000, "Peso per bobina");
+    if (unit <= 0 || fractions.some(fraction => !Number.isFinite(fraction) || fraction <= 0 || fraction > 1)) throw new Error("Peso o frazioni non validi.");
+    const unitPrice = price == null ? null : requireSpoolNumber(price, "Prezzo");
+    const entry = { id: createSpoolId(), brand: canonicalizeBrand(p.brand), material: canonicalizeMaterial(p.material),
+      variant: p.variant || "", color_code: p.color_code || "", packaging_type: p.packaging_type || "spool", unit_weight_g: unit,
+      unit_price: unitPrice, supplier: supplier || "", source_purchase_id: p.id, sealed_spools: sealedCount,
+      open_spools: fractions.length, open_spools_fractions: fractions.slice(), finished_spools: 0, spools_total: qty,
+      total_weight_g: qty * unit, notes: "", spool_state_version: 1 };
+    recalcWeightsForFilament(entry);
+    const nextFilaments = deduplicateFilamentsByIdentity([...filaments, entry]);
+    const previous = captureDomainState();
+    saveStateForUndo(`Trasferite ${qty} bobine al magazzino`);
+    p.quantity_purchased_original = Math.max(p.quantity_purchased_original ?? available, available);
+    p.quantity_spools = available - qty;
+    if ("quantitySpools" in p) p.quantitySpools = p.quantity_spools;
+    filaments = nextFilaments;
+    if (!commitDomainState(previous)) return false;
+    renderAll();
+    return qty;
+  }
+
   // Unisce più righe identiche di magazzino in una sola (stessa marca/materiale/colore/codice/peso)
   function deduplicateFilamentsByIdentity(list) {
-    if (!Array.isArray(list) || list.length === 0) return [];
-
-    const map = new Map();
-
-    list.forEach((orig) => {
-      if (!orig) return;
-      const brand = canonicalizeBrand(orig.brand || "");
-      const material = canonicalizeMaterial(orig.material);
-      const variant = (orig.variant || "").trim();
-      const colorCode = (orig.color_code || "").trim();
-      const unit = orig.unit_weight_g || 0;
-
-      const key =
-        brand.toLowerCase() +
-        "||" +
-        material.toLowerCase() +
-        "||" +
-        variant.toLowerCase() +
-        "||" +
-        colorCode.toLowerCase() +
-        "||" +
-        unit;
-
-      const f = {
-        ...orig,
-        brand,
-        material,
-        variant,
-        color_code: colorCode,
-        unit_weight_g: unit
-      };
-
-      if (!map.has(key)) {
-        const spoolsFromCounts = (f.sealed_spools || 0) + (f.open_spools || 0);
-        const baseSpools =
-          typeof f.spools_total === "number" && f.spools_total >= 0
-            ? f.spools_total
-            : spoolsFromCounts;
-        const totalWeight =
-          typeof f.total_weight_g === "number" && f.total_weight_g >= 0
-            ? f.total_weight_g
-            : baseSpools * unit;
-
-        let remaining =
-          typeof f.remaining_weight_g === "number" && f.remaining_weight_g >= 0
-            ? f.remaining_weight_g
-            : undefined;
-        let used =
-          typeof f.used_weight_g === "number" && f.used_weight_g >= 0
-            ? f.used_weight_g
-            : undefined;
-
-        if (typeof remaining !== "number" && typeof used === "number") {
-          remaining = Math.max(0, totalWeight - used);
-        }
-        if (
-          typeof remaining !== "number" &&
-          typeof used !== "number" &&
-          typeof totalWeight === "number"
-        ) {
-          remaining = totalWeight;
-          used = 0;
-        }
-        if (
-          typeof used !== "number" &&
-          typeof remaining === "number" &&
-          typeof totalWeight === "number"
-        ) {
-          used = Math.max(0, totalWeight - remaining);
-        }
-
-        const base = {
-          ...f,
-          spools_total: baseSpools,
-          sealed_spools: f.sealed_spools || 0,
-          open_spools: f.open_spools || 0,
-          total_weight_g: totalWeight,
-          remaining_weight_g: remaining != null ? remaining : 0,
-          used_weight_g: used != null ? used : 0,
-          main_fraction:
-            typeof f.main_fraction === "number" ? f.main_fraction : 1
-        };
-
-        map.set(key, base);
-      } else {
-        const agg = map.get(key);
-        const addSpools =
-          typeof f.spools_total === "number" && f.spools_total >= 0
-            ? f.spools_total
-            : (f.sealed_spools || 0) + (f.open_spools || 0);
-        const totalWeightAdd =
-          typeof f.total_weight_g === "number" && f.total_weight_g >= 0
-            ? f.total_weight_g
-            : addSpools * unit;
-
-        let remainingAdd =
-          typeof f.remaining_weight_g === "number" &&
-          f.remaining_weight_g >= 0
-            ? f.remaining_weight_g
-            : undefined;
-        let usedAdd =
-          typeof f.used_weight_g === "number" && f.used_weight_g >= 0
-            ? f.used_weight_g
-            : undefined;
-
-        if (typeof remainingAdd !== "number" && typeof usedAdd === "number") {
-          remainingAdd = Math.max(0, totalWeightAdd - usedAdd);
-        }
-        if (
-          typeof remainingAdd !== "number" &&
-          typeof usedAdd !== "number"
-        ) {
-          remainingAdd = totalWeightAdd;
-          usedAdd = 0;
-        }
-        if (
-          typeof usedAdd !== "number" &&
-          typeof remainingAdd === "number"
-        ) {
-          usedAdd = Math.max(0, totalWeightAdd - remainingAdd);
-        }
-
-        agg.spools_total += addSpools;
-        agg.sealed_spools += f.sealed_spools || 0;
-        agg.open_spools += f.open_spools || 0;
-        agg.total_weight_g += totalWeightAdd;
-        agg.remaining_weight_g += remainingAdd;
-        agg.used_weight_g += usedAdd;
-
-        const frac =
-          typeof f.main_fraction === "number" ? f.main_fraction : 1;
-        const currentFrac =
-          typeof agg.main_fraction === "number" ? agg.main_fraction : 1;
-        agg.main_fraction = Math.min(currentFrac, frac);
-
-        if (f.supplier && !agg.supplier) agg.supplier = f.supplier;
-        if (f.notes) {
-          agg.notes = agg.notes ? agg.notes + "; " + f.notes : f.notes;
-        }
-      }
-    });
-
-    return Array.from(map.values());
+    if (!Array.isArray(list)) throw new Error("Elenco filamenti non valido.");
+    const grouped = new Map();
+    for (const original of list) {
+      const f = JSON.parse(JSON.stringify(original));
+      f.brand = canonicalizeBrand(f.brand || "");
+      f.material = canonicalizeMaterial(f.material || "");
+      f.variant = String(f.variant || "").trim();
+      f.color_code = String(f.color_code || "").trim();
+      recalcWeightsForFilament(f);
+      const key = getFilamentIdentity(f);
+      if (!grouped.has(key)) { grouped.set(key, f); continue; }
+      const aggregate = grouped.get(key);
+      const spools = [...getActiveFilamentSpools(aggregate), ...getActiveFilamentSpools(f)];
+      aggregate.finished_spools += f.finished_spools;
+      aggregate.total_weight_g += f.total_weight_g;
+      setActiveFilamentSpools(aggregate, spools);
+      if (f.notes) aggregate.notes = [aggregate.notes, f.notes].filter(Boolean).join("; ");
+      recalcWeightsForFilament(aggregate);
+    }
+    return Array.from(grouped.values());
   }
 
   function showToast(message, type = "info") {
@@ -1366,11 +1336,11 @@
   }
 
   function getColorHex(colorName) {
-    if (!colorName) return "#e5e7eb";
+    if (typeof colorName !== "string" || !colorName) return "#e5e7eb";
     
     // Prima prova match diretto
     const direct = colorHexMap[colorName];
-    if (direct) return direct;
+    if (typeof direct === "string") return direct;
     
     // Estrai codice Bambu se presente (es. "Nero (33102)" -> "33102")
     const codeMatch = colorName.match(/\((\d{5})\)/);
@@ -1613,7 +1583,7 @@
       textClass = isDark ? "light-text" : "dark-text";
     }
     
-    return `<span class="pill-colored ${textClass}" style="background: ${hex};" title="${displayName}">${displayName}</span>`;
+    return `<span class="pill-colored ${textClass}" style="background: ${hex};" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>`;
   }
 
   // =============================================
@@ -1625,296 +1595,150 @@
   function createColorDropdown(containerId, options = {}) {
     const container = document.getElementById(containerId);
     if (!container) return null;
-
-    const {
-      placeholder = "Seleziona colore...",
-      allowCustom = true,
-      customLabel = "Altro colore...",
-      onSelect = () => {},
-      initialValue = ""
-    } = options;
-
-    // Create wrapper
+    if (activeColorDropdown && (!activeColorDropdown.isConnected || container.contains(activeColorDropdown))) closeColorDropdown(activeColorDropdown);
+    const { placeholder = "Seleziona colore...", allowCustom = true, customLabel = "Altro colore...", onSelect = () => {}, initialValue = "" } = options;
     const wrapper = document.createElement("div");
     wrapper.className = "color-dropdown-wrapper";
-    wrapper.setAttribute("data-dropdown-id", containerId);
-
-    // Create trigger button
+    wrapper.dataset.dropdownId = containerId;
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.className = "color-dropdown-trigger";
-    trigger.innerHTML = `
-      <span class="color-dot" style="background: #e5e7eb;"></span>
-      <span class="color-text">${placeholder}</span>
-      <svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none">
-        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    `;
-
-    // Create menu
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", containerId + "Menu");
+    trigger.innerHTML = '<span class="color-dot" style="background:#e5e7eb"></span><span class="color-text"></span><svg class="dropdown-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"/></svg>';
+    trigger.querySelector(".color-text").textContent = placeholder;
     const menu = document.createElement("div");
+    menu.id = containerId + "Menu";
     menu.className = "color-dropdown-menu";
-
-    // Create search
+    menu.hidden = true;
+    wrapper._colorMenu = menu;
     const searchDiv = document.createElement("div");
     searchDiv.className = "color-dropdown-search";
-    searchDiv.innerHTML = `<input type="text" placeholder="Cerca colore..." />`;
-    menu.appendChild(searchDiv);
-
-    // Create options container
+    const searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.placeholder = "Cerca colore...";
+    searchInput.setAttribute("aria-label", "Cerca colore");
+    searchDiv.appendChild(searchInput);
     const optionsContainer = document.createElement("div");
     optionsContainer.className = "color-dropdown-options";
-    menu.appendChild(optionsContainer);
-
-    wrapper.appendChild(trigger);
-    wrapper.appendChild(menu);
-
-    // Hidden input for form value
+    menu.append(searchDiv, optionsContainer);
     const hiddenInput = document.createElement("input");
     hiddenInput.type = "hidden";
     hiddenInput.name = containerId + "_value";
     hiddenInput.id = containerId + "_value";
-    wrapper.appendChild(hiddenInput);
-
-    // Replace container content
-    container.innerHTML = "";
-    container.appendChild(wrapper);
-
-    // Render options
-    function renderOptions(filter = "") {
-      const filterLower = filter.toLowerCase();
-      let html = "";
-
-      const filteredColors = colorList.filter(c => 
-        c.toLowerCase().includes(filterLower)
-      );
-
-      if (filteredColors.length === 0 && !allowCustom) {
-        html = '<div class="color-dropdown-empty">Nessun colore trovato</div>';
-      } else {
-        filteredColors.forEach(color => {
-          const hex = getColorHex(color);
-          const selected = hiddenInput.value === color ? "selected" : "";
-          
-          // Se il colore è un codice numerico, mostra anche il nome
-          let displayName = color;
-          if (/^\d{5}$/.test(color)) {
-            // È un codice numerico (es. 10103)
-            const colorName = getColorNameFromCode(color);
-            if (colorName) {
-              displayName = `${color} - ${colorName}`;
-            }
-          }
-          
-          html += `
-            <div class="color-dropdown-option ${selected}" data-value="${color}">
-              <span class="color-dot" style="background: ${hex};"></span>
-              <span class="color-name">${displayName}</span>
-            </div>
-          `;
-        });
-
-        if (allowCustom) {
-          html += `
-            <div class="color-dropdown-option custom-option" data-value="__custom__">
-              <span class="color-dot" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);"></span>
-              <span class="color-name">${customLabel}</span>
-            </div>
-          `;
-        }
-      }
-
-      optionsContainer.innerHTML = html;
-
-      // Add click handlers
-      optionsContainer.querySelectorAll(".color-dropdown-option").forEach(opt => {
-        opt.addEventListener("click", () => {
-          const value = opt.getAttribute("data-value");
-          selectColorOption(wrapper, value, onSelect);
-        });
+    wrapper.append(trigger, menu, hiddenInput);
+    container.replaceChildren(wrapper);
+    function renderOptions(filter = searchInput.value) {
+      optionsContainer.replaceChildren();
+      const colors = colorList.filter(color => color.toLowerCase().includes(filter.toLowerCase()));
+      colors.forEach(color => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "color-dropdown-option" + (hiddenInput.value === color ? " selected" : "");
+        button.dataset.value = color;
+        const dot = document.createElement("span");
+        dot.className = "color-dot";
+        dot.style.background = getColorHex(color);
+        const label = document.createElement("span");
+        label.className = "color-name";
+        const name = /^\d{5}$/.test(color) ? getColorNameFromCode(color) : null;
+        label.textContent = name ? color + " - " + name : color;
+        button.append(dot, label);
+        button.addEventListener("click", () => selectColorOption(wrapper, color, onSelect));
+        optionsContainer.appendChild(button);
       });
+      if (allowCustom) {
+        const custom = document.createElement("button");
+        custom.type = "button";
+        custom.className = "color-dropdown-option custom-option";
+        custom.dataset.value = "__custom__";
+        custom.textContent = customLabel;
+        custom.addEventListener("click", () => selectColorOption(wrapper, "__custom__", onSelect));
+        optionsContainer.appendChild(custom);
+      } else if (!colors.length) {
+        const empty = document.createElement("div");
+        empty.className = "color-dropdown-empty";
+        empty.textContent = "Nessun colore trovato";
+        optionsContainer.appendChild(empty);
+      }
     }
-
-    // Event handlers
-    trigger.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleColorDropdown(wrapper);
-      renderOptions();
+    trigger.addEventListener("click", event => { event.stopPropagation(); renderOptions(); toggleColorDropdown(wrapper); });
+    trigger.addEventListener("keydown", event => {
+      if (event.key === "ArrowDown") { event.preventDefault(); renderOptions(); if (!wrapper.classList.contains("open")) toggleColorDropdown(wrapper); menu.querySelector("button")?.focus(); }
     });
-
-    const searchInput = searchDiv.querySelector("input");
-    searchInput.addEventListener("input", (e) => {
-      renderOptions(e.target.value);
+    searchInput.addEventListener("input", () => renderOptions());
+    menu.addEventListener("keydown", event => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      if (event.target === searchInput && event.key !== "ArrowDown") return;
+      const buttons = Array.from(optionsContainer.querySelectorAll("button"));
+      if (!buttons.length) return;
+      event.preventDefault();
+      let index = buttons.indexOf(document.activeElement);
+      index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
+      buttons[index].focus();
     });
-
-    searchInput.addEventListener("click", (e) => {
-      e.stopPropagation();
-    });
-
-    // Set initial value if provided
-    if (initialValue) {
-      setColorDropdownValue(wrapper, initialValue);
-    }
-
-    return {
-      wrapper,
-      setValue: (val) => setColorDropdownValue(wrapper, val),
-      getValue: () => hiddenInput.value,
-      refresh: () => renderOptions()
-    };
+    if (initialValue) setColorDropdownValue(wrapper, initialValue);
+    return { wrapper, setValue: value => setColorDropdownValue(wrapper, value), getValue: () => hiddenInput.value, refresh: () => renderOptions() };
   }
 
   function toggleColorDropdown(wrapper) {
-    const isOpen = wrapper.classList.contains("open");
-    const menu = wrapper.querySelector(".color-dropdown-menu");
+    if (wrapper.classList.contains("open")) { closeColorDropdown(wrapper); return; }
+    if (activeColorDropdown) closeColorDropdown(activeColorDropdown);
+    if (activeMultiSelectDropdown) activeMultiSelectDropdown.close();
+    const menu = wrapper._colorMenu;
     const trigger = wrapper.querySelector(".color-dropdown-trigger");
-    
-    // Close all dropdowns first
-    document.querySelectorAll(".color-dropdown-wrapper.open").forEach(w => {
-      const otherMenu = w.querySelector(".color-dropdown-menu");
-      if (otherMenu && otherMenu.parentNode === document.getElementById('floating-layer')) {
-        w.appendChild(otherMenu);
-      }
-      w.classList.remove("open");
-    });
-
-    if (!isOpen) {
-      wrapper.classList.add("open");
-      activeColorDropdown = wrapper;
-      
-      // Sposta il menu nel floating layer per evitare problemi di z-index e overflow
-      const floatingLayer = document.getElementById('floating-layer') || initFloatingLayer();
-      floatingLayer.appendChild(menu);
-      
-      // Posiziona il menu
-      positionColorDropdownMenu(trigger, menu);
-      
-      // Focus search
-      const searchInput = wrapper.querySelector(".color-dropdown-search input");
-      if (searchInput) {
-        setTimeout(() => searchInput.focus(), 50);
-      }
-      
-      // Riposiziona su scroll/resize
-      const handleReposition = () => {
-        if (wrapper.classList.contains("open")) {
-          positionColorDropdownMenu(trigger, menu);
-        }
-      };
-      window.addEventListener('scroll', handleReposition, true);
-      window.addEventListener('resize', handleReposition);
-      
-      // Salva riferimento per cleanup
-      wrapper._repositionHandler = handleReposition;
-    } else {
-      // Riporta il menu nel wrapper
-      if (menu.parentNode !== wrapper) {
-        wrapper.appendChild(menu);
-      }
-      // Rimuovi event listeners
-      if (wrapper._repositionHandler) {
-        window.removeEventListener('scroll', wrapper._repositionHandler, true);
-        window.removeEventListener('resize', wrapper._repositionHandler);
-      }
-      activeColorDropdown = null;
-    }
+    if (!menu) return;
+    wrapper.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    activeColorDropdown = wrapper;
+    initFloatingLayer().appendChild(menu);
+    menu.hidden = false;
+    menu.classList.add("is-portal-active");
+    const reposition = () => positionColorDropdownMenu(trigger, menu);
+    wrapper._repositionHandler = reposition;
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    reposition();
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (activeColorDropdown === wrapper) reposition(); }));
+    menu.querySelector("input")?.focus({ preventScroll: true });
   }
-  
+
   function positionColorDropdownMenu(trigger, menu) {
-    const triggerRect = trigger.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    const menuWidth = triggerRect.width;
-    
-    // SEMPRE apri sotto il trigger inizialmente
-    let top = triggerRect.bottom + 4;
-    let left = triggerRect.left;
-    
-    // Assicurati che non esca dal viewport orizzontalmente
-    if (left + menuWidth > viewportWidth - 8) {
-      left = viewportWidth - menuWidth - 8;
-    }
-    if (left < 8) left = 8;
-    
-    // Applica posizione iniziale
-    menu.style.position = 'fixed';
-    menu.style.top = `${top}px`;
-    menu.style.left = `${left}px`;
-    menu.style.width = `${menuWidth}px`;
-    menu.style.zIndex = '999999';
-    
-    // Dopo il rendering, aggiusta se necessario
-    requestAnimationFrame(() => {
-      const menuHeight = menu.offsetHeight || 250;
-      const menuBottom = top + menuHeight;
-      
-      // Se il menu esce dal basso dello schermo
-      if (menuBottom > viewportHeight - 8) {
-        const spaceAbove = triggerRect.top;
-        const spaceBelow = viewportHeight - triggerRect.bottom;
-        
-        if (spaceAbove > spaceBelow && spaceAbove > menuHeight) {
-          // C'è più spazio sopra e ci sta: apri sopra
-          top = triggerRect.top - menuHeight - 4;
-        } else {
-          // Non c'è abbastanza spazio sopra: mantieni sotto ma limita
-          top = viewportHeight - menuHeight - 8;
-        }
-        
-        // Assicurati che non vada sopra lo schermo
-        if (top < 8) {
-          top = 8;
-        }
-        
-        menu.style.top = `${top}px`;
-      }
-    });
+    if (menu.hidden || !trigger.isConnected) return;
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.min(Math.max(rect.width, 180), innerWidth - 16);
+    menu.style.width = width + "px";
+    menu.style.maxHeight = Math.min(250, Math.max(80, innerHeight - 16)) + "px";
+    const height = Math.min(menu.scrollHeight, 250, innerHeight - 16);
+    const below = innerHeight - rect.bottom - 8;
+    let top = below >= height ? rect.bottom + 4 : rect.top >= height + 8 ? rect.top - height - 4 : Math.max(8, innerHeight - height - 8);
+    menu.style.top = top + "px";
+    menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - width - 8)) + "px";
   }
 
   function selectColorOption(wrapper, value, onSelect) {
-    const trigger = wrapper.querySelector(".color-dropdown-trigger");
-    const hiddenInput = wrapper.querySelector("input[type='hidden']");
-    const colorDot = trigger.querySelector(".color-dot");
-    const colorText = trigger.querySelector(".color-text");
-    const menu = wrapper.querySelector(".color-dropdown-menu") || 
-                 document.querySelector(`.color-dropdown-menu[data-wrapper-id="${wrapper.getAttribute('data-dropdown-id')}"]`) ||
-                 document.getElementById('floating-layer')?.querySelector(".color-dropdown-menu");
-
-    if (value === "__custom__") {
-      // Close dropdown and trigger custom input flow
-      closeColorDropdown(wrapper, menu);
-      onSelect("__custom__");
-      return;
-    }
-
-    hiddenInput.value = value;
-    const hex = getColorHex(value);
-    colorDot.style.background = hex;
-    colorText.textContent = value;
-
-    closeColorDropdown(wrapper, menu);
+    if (value !== "__custom__") setColorDropdownValue(wrapper, value);
+    else wrapper.querySelector("input[type='hidden']").value = "";
+    closeColorDropdown(wrapper);
+    wrapper.querySelector(".color-dropdown-trigger").focus({ preventScroll: true });
     onSelect(value);
   }
-  
-  function closeColorDropdown(wrapper, menu) {
+
+  function closeColorDropdown(wrapper) {
+    if (!wrapper) return;
+    const menu = wrapper._colorMenu;
     wrapper.classList.remove("open");
-    activeColorDropdown = null;
-    
-    // Riporta il menu nel wrapper
-    if (menu && menu.parentNode !== wrapper) {
-      // Reset stili inline
-      menu.style.position = '';
-      menu.style.top = '';
-      menu.style.left = '';
-      menu.style.width = '';
-      menu.style.zIndex = '';
+    wrapper.querySelector(".color-dropdown-trigger")?.setAttribute("aria-expanded", "false");
+    if (activeColorDropdown === wrapper) activeColorDropdown = null;
+    if (menu) {
+      menu.hidden = true;
+      menu.classList.remove("is-portal-active");
+      menu.removeAttribute("style");
       wrapper.appendChild(menu);
     }
-    
-    // Rimuovi event listeners
     if (wrapper._repositionHandler) {
-      window.removeEventListener('scroll', wrapper._repositionHandler, true);
-      window.removeEventListener('resize', wrapper._repositionHandler);
+      window.removeEventListener("scroll", wrapper._repositionHandler, true);
+      window.removeEventListener("resize", wrapper._repositionHandler);
       wrapper._repositionHandler = null;
     }
   }
@@ -1937,24 +1761,15 @@
     }
   }
 
-  // Close dropdown when clicking outside
-  document.addEventListener("click", (e) => {
-    if (activeColorDropdown) {
-      const menu = document.getElementById('floating-layer')?.querySelector(".color-dropdown-menu") ||
-                   activeColorDropdown.querySelector(".color-dropdown-menu");
-      // Check if click is outside both wrapper and floating menu
-      if (!activeColorDropdown.contains(e.target) && (!menu || !menu.contains(e.target))) {
-        closeColorDropdown(activeColorDropdown, menu);
-      }
-    }
+  document.addEventListener("click", event => {
+    if (activeColorDropdown && !activeColorDropdown.contains(event.target) && !activeColorDropdown._colorMenu.contains(event.target)) closeColorDropdown(activeColorDropdown);
   });
-
-  // Close dropdown on escape
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && activeColorDropdown) {
-      const menu = document.getElementById('floating-layer')?.querySelector(".color-dropdown-menu") ||
-                   activeColorDropdown.querySelector(".color-dropdown-menu");
-      closeColorDropdown(activeColorDropdown, menu);
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && activeColorDropdown) {
+      const trigger = activeColorDropdown.querySelector(".color-dropdown-trigger");
+      closeColorDropdown(activeColorDropdown);
+      trigger.focus({ preventScroll: true });
+      event.preventDefault();
     }
   });
 
@@ -1990,173 +1805,25 @@
 
   // Funzione per aggiunta al magazzino con selezione quantità
   function addToStockWithQuantity(purchasedId) {
-    const p = purchasedFilaments.find(x => x.id === purchasedId);
-    if (!p) {
-      showToast("Filamento non trovato.", "error");
-      return;
-    }
-
-    const maxQty = p.quantity_spools != null ? p.quantity_spools : (p.quantitySpools || 0);
-    if (maxQty < 1) {
-      showToast("Non ci sono bobine disponibili da trasferire.", "error");
-      return;
-    }
-
-    // Chiedi la quantità
-    const qtyStr = prompt(
-      `Quante bobine vuoi aggiungere al magazzino?\n\n` +
-      `Filamento: ${canonicalizeBrand(p.brand)} ${p.material} ${p.variant}\n` +
-      `Disponibili: ${maxQty}`,
-      "1"
-    );
-
-    if (qtyStr === null) return; // Annullato
-
-    const qty = parseInt(qtyStr, 10);
-    if (isNaN(qty) || qty < 1) {
-      showToast("Inserisci un numero valido maggiore di 0.", "error");
-      return;
-    }
-
-    if (qty > maxQty) {
-      showToast(`Puoi aggiungere al massimo ${maxQty} bobina/e.`, "error");
-      return;
-    }
-
-    // Crea o aggiorna filamento nel magazzino
-    const brand = canonicalizeBrand(p.brand);
-    const material = canonicalizeMaterial(p.material);
-    const identity = `${brand}|${material}|${p.variant}|${p.color_code || ""}|${p.unit_weight_g || 1000}`;
-
-    let existing = filaments.find(f => {
-      const fIdentity = `${canonicalizeBrand(f.brand)}|${canonicalizeMaterial(f.material)}|${f.variant}|${f.color_code || ""}|${f.unit_weight_g || 1000}`;
-      return fIdentity === identity;
-    });
-
-    if (existing) {
-      // Aggiungi alla quantità esistente
-      existing.sealed_spools = (existing.sealed_spools || 0) + qty;
-      existing.spools_total = (existing.spools_total || 0) + qty;
-      existing.total_weight_g = existing.spools_total * (existing.unit_weight_g || 1000);
-      recalcWeightsForFilament(existing);
-    } else {
-      // Crea nuovo filamento
-      const newFilament = {
-        id: `fil-${Date.now().toString(16)}`,
-        brand: brand,
-        material: material,
-        variant: p.variant || "",
-        color_code: p.color_code || "",
-        packaging_type: p.packaging_type || "spool",
-        unit_weight_g: p.unit_weight_g || 1000,
-        unit_price: p.unit_price || null,
-        spools_total: qty,
-        sealed_spools: qty,
-        open_spools: 0,
-        main_fraction: 1,
-        total_weight_g: qty * (p.unit_weight_g || 1000),
-        remaining_weight_g: qty * (p.unit_weight_g || 1000),
-        used_weight_g: 0,
-        supplier: p.supplier || "",
-        notes: ""
-      };
-      filaments.push(newFilament);
-    }
-
-    // Decrementa la quantità nel purchased
-    if (p.quantity_spools != null) {
-      p.quantity_spools -= qty;
-    } else if (p.quantitySpools != null) {
-      p.quantitySpools -= qty;
-    }
-
-    // Rimuovi se quantità = 0
-    const newQty = p.quantity_spools != null ? p.quantity_spools : p.quantitySpools;
-    if (newQty <= 0) {
-      purchasedFilaments = purchasedFilaments.filter(x => x.id !== purchasedId);
-    }
-
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
-    renderAll();
-    
-    // Emetti suono e notifica
-    playSuccessSound();
-    showToast(`${qty} bobina/e aggiunta/e al magazzino!`, "success");
+    const p = purchasedFilaments.find(entry => entry.id === purchasedId);
+    if (!p) return;
+    const value = prompt("Quante bobine sigillate vuoi trasferire?", "1");
+    if (value === null) return;
+    try {
+      const qty = requireSpoolNumber(value, "Quantità", true);
+      if (transferPurchasedSpools(purchasedId, qty, qty, [], p.unit_price ?? null, p.supplier || "") === false) return;
+      showToast(`${qty} bobine trasferite.`, "success");
+    } catch (error) { showToast(error.message, "error"); }
   }
 
   // Funzione per aggiunta diretta al magazzino
   function quickAddToStock(purchasedId) {
-    const p = purchasedFilaments.find(x => x.id === purchasedId);
-    if (!p) {
-      showToast("Filamento non trovato.", "error");
-      return;
-    }
-
-    const qty = p.quantity_spools != null ? p.quantity_spools : (p.quantitySpools || 1);
-    if (qty < 1) {
-      showToast("Non ci sono bobine disponibili da trasferire.", "error");
-      return;
-    }
-
-    // Crea o aggiorna filamento nel magazzino
-    const brand = canonicalizeBrand(p.brand);
-    const material = canonicalizeMaterial(p.material);
-    const identity = `${brand}|${material}|${p.variant}|${p.color_code || ""}|${p.unit_weight_g || 1000}`;
-
-    let existing = filaments.find(f => {
-      const fIdentity = `${canonicalizeBrand(f.brand)}|${canonicalizeMaterial(f.material)}|${f.variant}|${f.color_code || ""}|${f.unit_weight_g || 1000}`;
-      return fIdentity === identity;
-    });
-
-    if (existing) {
-      // Aggiungi alla quantità esistente
-      existing.sealed_spools = (existing.sealed_spools || 0) + 1;
-      existing.spools_total = (existing.spools_total || 0) + 1;
-      existing.total_weight_g = existing.spools_total * (existing.unit_weight_g || 1000);
-      recalcWeightsForFilament(existing);
-    } else {
-      // Crea nuovo filamento
-      const newFilament = {
-        id: `fil-${Date.now().toString(16)}`,
-        brand: brand,
-        material: material,
-        variant: p.variant || "",
-        color_code: p.color_code || "",
-        packaging_type: p.packaging_type || "spool",
-        unit_weight_g: p.unit_weight_g || 1000,
-        unit_price: p.unit_price || null,
-        spools_total: 1,
-        sealed_spools: 1,
-        open_spools: 0,
-        main_fraction: 1,
-        total_weight_g: p.unit_weight_g || 1000,
-        remaining_weight_g: p.unit_weight_g || 1000,
-        used_weight_g: 0,
-        supplier: p.supplier || "",
-        notes: ""
-      };
-      filaments.push(newFilament);
-    }
-
-    // Decrementa la quantità nel purchased
-    if (p.quantity_spools != null) {
-      p.quantity_spools -= 1;
-    } else if (p.quantitySpools != null) {
-      p.quantitySpools -= 1;
-    }
-
-    // Rimuovi se quantità = 0
-    const newQty = p.quantity_spools != null ? p.quantity_spools : p.quantitySpools;
-    if (newQty <= 0) {
-      purchasedFilaments = purchasedFilaments.filter(x => x.id !== purchasedId);
-    }
-
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
-    renderAll();
-    playSuccessSound();
-    showToast("1 bobina aggiunta al magazzino!", "success");
+    const p = purchasedFilaments.find(entry => entry.id === purchasedId);
+    if (!p) return;
+    try {
+      if (transferPurchasedSpools(purchasedId, 1, 1, [], p.unit_price ?? null, p.supplier || "") === false) return;
+      showToast("Una bobina trasferita.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   }
 
   // Esponi le funzioni globalmente per l'onclick
@@ -2212,7 +1879,7 @@
 
     // Event listener per aggiornare la sezione bobine aperte
     const updateOpenSpoolsSection = () => {
-      const openCount = parseInt(openInput.value, 10) || 0;
+      const openCount = Number(document.getElementById("addToStockOpen").value) || 0;
       if (openCount > 0 && openSpoolsSection && openSpoolsContainer) {
         openSpoolsSection.style.display = "block";
         openSpoolsContainer.innerHTML = "";
@@ -2252,201 +1919,30 @@
 
   // Funzione per applicare l'aggiunta al magazzino
   function applyAddToStock() {
-    const hiddenId = document.getElementById("addToStockPurchasedId");
-    const qtyInput = document.getElementById("addToStockQty");
-    const sealedInput = document.getElementById("addToStockSealed");
-    const openInput = document.getElementById("addToStockOpen");
-    const priceInput = document.getElementById("addToStockPrice");
-    const supplierInput = document.getElementById("addToStockSupplier");
-    const openSpoolsContainer = document.getElementById("addToStockOpenSpoolsListContainer");
-
-    if (!hiddenId || !qtyInput || !sealedInput || !openInput) {
-      showToast("Errore: elementi del modal non trovati.", "error");
-      return;
-    }
-
-    const purchasedId = hiddenId.value;
-    const p = purchasedFilaments.find(x => x.id === purchasedId);
-    if (!p) {
-      showToast("Filamento non trovato.", "error");
-      return;
-    }
-
-    // Salva stato per undo
-    saveStateForUndo(`Aggiunto al magazzino: ${canonicalizeBrand(p.brand)} – ${p.material} – ${p.variant}`);
-
-    const maxQty = p.quantity_spools != null ? p.quantity_spools : (p.quantitySpools || 0);
-    const qty = parseInt(qtyInput.value, 10);
-    const sealed = parseInt(sealedInput.value, 10) || 0;
-    const open = parseInt(openInput.value, 10) || 0;
-
-    // Validazione
-    if (isNaN(qty) || qty < 1) {
-      showToast("Inserisci una quantità valida maggiore di 0.", "error");
-      return;
-    }
-
-    if (qty > maxQty) {
-      showToast(`Puoi aggiungere al massimo ${maxQty} bobina/e.`, "error");
-      return;
-    }
-
-    if (sealed + open !== qty) {
-      showToast(`La somma di sigillate (${sealed}) e aperte (${open}) deve essere uguale alla quantità totale (${qty}).`, "error");
-      return;
-    }
-
-    if (sealed < 0 || open < 0) {
-      showToast("Le quantità non possono essere negative.", "error");
-      return;
-    }
-
-    // Raccogli frazioni delle bobine aperte
-    const openSpoolsFractions = [];
-    if (open > 0 && openSpoolsContainer) {
-      const fractionSelects = openSpoolsContainer.querySelectorAll(".add-to-stock-fraction-select");
-      for (let i = 0; i < Math.min(open, fractionSelects.length); i++) {
-        const fraction = parseFloat(fractionSelects[i].value) || 1;
-        openSpoolsFractions.push(fraction);
-      }
-      // Se mancano frazioni, aggiungi 1 per le bobine rimanenti
-      while (openSpoolsFractions.length < open) {
-        openSpoolsFractions.push(1);
-      }
-    }
-
-    // Crea o aggiorna filamento nel magazzino
-    const brand = canonicalizeBrand(p.brand);
-    const material = canonicalizeMaterial(p.material);
-    const identity = `${brand}|${material}|${p.variant}|${p.color_code || ""}|${p.unit_weight_g || 1000}`;
-
-    let existing = filaments.find(f => {
-      const fIdentity = `${canonicalizeBrand(f.brand)}|${canonicalizeMaterial(f.material)}|${f.variant}|${f.color_code || ""}|${f.unit_weight_g || 1000}`;
-      return fIdentity === identity;
-    });
-
-    const unitWeight = p.unit_weight_g || 1000;
-    const unitPrice = priceInput.value ? parseFloat(priceInput.value) : (p.unit_price || null);
-    const supplier = supplierInput.value.trim() || (p.supplier || "");
-
-    if (existing) {
-      // Aggiungi alla quantità esistente
-      existing.sealed_spools = (existing.sealed_spools || 0) + sealed;
-      existing.open_spools = (existing.open_spools || 0) + open;
-      existing.spools_total = (existing.spools_total || 0) + qty;
-      
-      // Aggiorna frazioni bobine aperte
-      if (!Array.isArray(existing.open_spools_fractions)) {
-        existing.open_spools_fractions = [];
-      }
-      existing.open_spools_fractions.push(...openSpoolsFractions);
-      
-      // Aggiorna prezzo se fornito
-      if (unitPrice != null && (existing.unit_price == null || existing.unit_price === 0)) {
-        existing.unit_price = unitPrice;
-      }
-      
-      // Aggiorna fornitore se fornito
-      if (supplier && !existing.supplier) {
-        existing.supplier = supplier;
-      }
-      
-      existing.total_weight_g = existing.spools_total * (existing.unit_weight_g || unitWeight);
-      recalcWeightsForFilament(existing);
-    } else {
-      // Crea nuovo filamento
-      const newFilament = {
-        id: `fil-${Date.now().toString(16)}`,
-        brand: brand,
-        material: material,
-        variant: p.variant || "",
-        color_code: p.color_code || "",
-        packaging_type: p.packaging_type || "spool",
-        unit_weight_g: unitWeight,
-        unit_price: unitPrice,
-        spools_total: qty,
-        sealed_spools: sealed,
-        open_spools: open,
-        open_spools_fractions: openSpoolsFractions.length > 0 ? openSpoolsFractions : undefined,
-        main_fraction: open > 0 && openSpoolsFractions.length > 0 ? openSpoolsFractions[0] : 1,
-        total_weight_g: qty * unitWeight,
-        remaining_weight_g: 0, // Verrà calcolato da recalcWeightsForFilament
-        used_weight_g: 0,
-        supplier: supplier,
-        notes: ""
-      };
-      recalcWeightsForFilament(newFilament);
-      filaments.push(newFilament);
-    }
-
-    // Decrementa la quantità nel purchased
-    if (p.quantity_spools != null) {
-      p.quantity_spools -= qty;
-    } else if (p.quantitySpools != null) {
-      p.quantitySpools -= qty;
-    }
-
-    // Rimuovi se quantità = 0
-    const newQty = p.quantity_spools != null ? p.quantity_spools : p.quantitySpools;
-    if (newQty <= 0) {
-      purchasedFilaments = purchasedFilaments.filter(x => x.id !== purchasedId);
-    }
-
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
-    renderAll();
-    closeAddToStockModal();
-    
-    // Emetti suono e notifica
-    playSuccessSound();
-    showToast(`${qty} bobina/e aggiunta/e al magazzino!`, "success");
+    try {
+      const value = id => document.getElementById(id)?.value ?? "";
+      const qty = requireSpoolNumber(value("addToStockQty"), "Quantità", true);
+      const sealed = requireSpoolNumber(value("addToStockSealed"), "Bobine sigillate", true);
+      const open = requireSpoolNumber(value("addToStockOpen"), "Bobine aperte", true);
+      if (sealed + open !== qty) throw new Error("Sigillate e aperte devono coincidere con la quantità trasferita.");
+      const controls = document.querySelectorAll("#addToStockOpenSpoolsListContainer .add-to-stock-fraction-select");
+      if (open !== controls.length) throw new Error("Imposta la frazione residua per ogni bobina aperta.");
+      const fractions = Array.from(controls, control => Number(control.value));
+      const price = value("addToStockPrice").trim();
+      if (transferPurchasedSpools(value("addToStockPurchasedId"), qty, sealed, fractions, price === "" ? null : Number(price), value("addToStockSupplier").trim()) === false) return;
+      closeAddToStockModal();
+      playSuccessSound();
+      showToast(`${qty} bobine trasferite al magazzino.`, "success");
+    } catch (error) { showToast(error.message, "error"); }
   }
 
   // Calcolo centralizzato dei pesi residui/usati per un singolo filamento
   function recalcWeightsForFilament(f) {
-    if (!f) return;
-
-    const unit = f.unit_weight_g || 0;
-    let remaining = 0;
-
-    // Bobine sigillate = piene
-    if (f.sealed_spools > 0) {
-      remaining += f.sealed_spools * unit;
-    }
-
-    // Bobine aperte: usa l'array delle frazioni se disponibile, altrimenti usa il vecchio sistema
-    if (f.open_spools > 0) {
-      if (Array.isArray(f.open_spools_fractions) && f.open_spools_fractions.length > 0) {
-        // Nuovo sistema: array delle frazioni
-        for (let i = 0; i < Math.min(f.open_spools, f.open_spools_fractions.length); i++) {
-          const fraction = typeof f.open_spools_fractions[i] === "number" ? f.open_spools_fractions[i] : 1;
-      remaining += fraction * unit;
-        }
-      } else {
-        // Vecchio sistema: retrocompatibilità
-        const finished = f.finished_spools || 0;
-        const nonFinishedOpen = f.open_spools - finished;
-        
-        if (nonFinishedOpen > 0) {
-          const fraction = typeof f.main_fraction === "number" ? f.main_fraction : 1;
-          remaining += fraction * unit;
-          if (nonFinishedOpen > 1) {
-            remaining += (nonFinishedOpen - 1) * unit;
-          }
-        }
-      }
-    }
-
-    // Caso esplicito: nessuna bobina nuova o aperta -> tutto consumato
-    if (f.sealed_spools === 0 && f.open_spools === 0) {
-      remaining = 0;
-    }
-
-    f.remaining_weight_g = remaining;
-    f.used_weight_g = Math.max(
-      0,
-      (f.total_weight_g || 0) - f.remaining_weight_g
-    );
+    normalizeFilamentSpools(f);
+    const remaining = (f.sealed_spools + f.open_spools_fractions.reduce((sum, fraction) => sum + fraction, 0)) * f.unit_weight_g;
+    f.remaining_weight_g = Math.round(remaining * 1000000) / 1000000;
+    f.used_weight_g = Math.max(0, f.total_weight_g - f.remaining_weight_g);
+    return f;
   }
 
   // Salvataggio automatico con debounce
@@ -2459,17 +1955,9 @@
 
   // Funzione per incrementare la versione
   function incrementVersion() {
-    // Estrai il numero dalla versione corrente (es. "V.90" -> 90)
-    const versionMatch = APP_VERSION.match(/V\.(\d+)/);
-    if (versionMatch) {
-      const currentNumber = parseInt(versionMatch[1], 10);
-      const newNumber = currentNumber + 1;
-      APP_VERSION = `V.${newNumber}`;
-      // Salva la nuova versione in localStorage
-      localStorage.setItem(VERSION_KEY, APP_VERSION);
-      // Aggiorna il titolo e il badge
-      updateVersionUI();
-    }
+    // Compatibilità con i chiamanti storici: la versione identifica il codice.
+    APP_VERSION = INITIAL_VERSION;
+    updateVersionUI();
   }
 
   // Funzione per aggiornare il titolo e il badge con la versione corrente
@@ -2501,151 +1989,373 @@
 
   // Funzione per caricare la versione da localStorage
   function loadVersion() {
-    const storedVersion = localStorage.getItem(VERSION_KEY);
-    const initialNum = parseInt(INITIAL_VERSION.replace(/[^0-9]/g, ''), 10);
-    
-    if (storedVersion && storedVersion.match(/^V\.\d+$/)) {
-      // Estrai i numeri di versione per confrontarli
-      const storedNum = parseInt(storedVersion.replace(/[^0-9]/g, ''), 10);
-      
-      // Usa sempre la versione più alta tra quella salvata e quella iniziale
-      // Se la versione iniziale è maggiore O UGUALE, aggiorna localStorage
-      // Questo forza l'aggiornamento quando modifichiamo il codice
-      if (initialNum >= storedNum) {
-        APP_VERSION = INITIAL_VERSION;
-        localStorage.setItem(VERSION_KEY, APP_VERSION);
-        console.log(`Versione aggiornata da V.${storedNum} a ${INITIAL_VERSION}`);
-      } else {
-        // Se quella salvata è maggiore, usa quella (caso normale di incremento automatico)
-        APP_VERSION = storedVersion;
-      }
-    } else {
-      // Se non c'è una versione salvata o non è valida, usa quella iniziale e salvala
-      APP_VERSION = INITIAL_VERSION;
-      localStorage.setItem(VERSION_KEY, APP_VERSION);
-      console.log(`Versione inizializzata a ${INITIAL_VERSION}`);
-    }
-    
-    // Forza l'aggiornamento dell'UI
+    APP_VERSION = INITIAL_VERSION;
     updateVersionUI();
-    
-    // Debug: verifica che sia stata impostata correttamente
-    console.log(`Versione corrente: ${APP_VERSION}, Versione iniziale: ${INITIAL_VERSION}`);
+  }
+
+  // Schema unico: i cataloghi mantengono i nomi dei backup precedenti.
+  const STATE_SCHEMA_VERSION = 4;
+  const LAST_GOOD_STATE_KEY = STORAGE_KEY + "_lastGood";
+  let dataRevision = 0;
+  let appSettings = { theme: "dark", lowStockThreshold: 25 };
+  let stateReady = false;
+  let storageWriteBlocked = false;
+  let storageBlockReason = "";
+  let lastKnownStorageRaw = null;
+  let lastKnownStorageValid = false;
+  let lastSavedPayload = "";
+  let isApplyingState = false;
+  let storageListenerInstalled = false;
+
+  function makeStableId(prefix = "id") {
+    const suffix = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    return prefix + "-" + suffix;
+  }
+
+  function cloneStateValue(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function parseImportNumber(value, label, options = {}) {
+    if ((value === null || value === undefined || value === "") && options.optional) return null;
+    let parsed = value;
+    if (typeof parsed === "string") {
+      let text = parsed.trim().replace(/^€\s*|\s*€$/g, "").replace(/\s/g, "");
+      // Nei file italiani la virgola è decimale; i punti prima della virgola sono migliaia.
+      if (/^[+-]?\d{1,3}(\.\d{3})+,\d+$/.test(text)) text = text.replace(/\./g, "");
+      if (!/^[+-]?\d+(?:[.,]\d+)?$/.test(text)) throw new Error(label + ": numero non valido");
+      parsed = Number(text.replace(",", "."));
+    }
+    if (typeof parsed !== "number" || !Number.isFinite(parsed) ||
+        parsed < (options.min === undefined ? 0 : options.min) ||
+        (options.max !== undefined && parsed > options.max) ||
+        (options.integer && !Number.isSafeInteger(parsed))) {
+      throw new Error(label + ": valore fuori intervallo");
+    }
+    return parsed;
+  }
+
+  function requireRecord(value, label) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(label + ": oggetto richiesto");
+    return value;
+  }
+
+  function validateText(value, label, fallback = "") {
+    if (value === undefined || value === null) return fallback;
+    if (typeof value !== "string") throw new Error(label + ": testo richiesto");
+    return value;
+  }
+
+  function validateTextList(value, label, fallback = []) {
+    if (value === undefined) return [...fallback];
+    if (!Array.isArray(value)) throw new Error(label + ": elenco richiesto");
+    return Array.from(new Set(value.map(item => validateText(item, label))));
+  }
+
+  function validateStateCandidate(input, includeHistory = true) {
+    const source = requireRecord(input, "Registro");
+    if (source.schemaVersion !== undefined && source.schemaVersion !== STATE_SCHEMA_VERSION) {
+      throw new Error("Versione del formato non supportata: " + source.schemaVersion);
+    }
+    if (!Array.isArray(source.filaments)) throw new Error("Elenco filamenti mancante o non valido");
+    if (source.filaments.length > 10000) throw new Error("Il registro supera 10.000 filamenti");
+    if (source.schemaVersion === STATE_SCHEMA_VERSION) {
+      for (const key of ["purchasedFilaments", "brands", "materials", "colors", "consumptionHistory", "locations"]) {
+        if (!Array.isArray(source[key])) throw new Error("Snapshot v4 incompleto: " + key);
+      }
+      requireRecord(source.settings, "Impostazioni v4");
+    }
+    const ids = new Set();
+    const allSpoolIds = new Set();
+    let activeSpoolCount = 0;
+    const candidateFilaments = source.filaments.map((record, index) => {
+      const f = cloneStateValue(requireRecord(record, "Filamento " + (index + 1)));
+      for (const field of ["id", "brand", "material", "variant", "color_code", "supplier", "notes", "location", "packaging_type", "source_purchase_id"]) {
+        f[field] = validateText(f[field], "Filamento: " + field);
+      }
+      f.id = f.id || makeStableId("fil");
+      if (ids.has(f.id)) throw new Error("ID filamento duplicato: " + f.id);
+      ids.add(f.id);
+      f.brand = canonicalizeBrand(f.brand);
+      f.material = canonicalizeMaterial(f.material);
+      if (!f.location && f.shelf_position !== undefined) f.location = validateText(f.shelf_position, "Posizione legacy");
+      if (f.spool_state_version !== undefined && f.spool_state_version !== 1) throw new Error("Versione bobine non supportata");
+      const packaging = f.packaging_type.toLowerCase();
+      f.packaging_type = ["refill", "ricarica", "senza bobina"].includes(packaging) ? "refill" : "spool";
+      for (const field of ["sealed_spools", "open_spools", "finished_spools", "spools_total"]) {
+        if (f[field] !== undefined) f[field] = parseImportNumber(f[field], field, { integer: true, max: 100000 });
+      }
+      f.sealed_spools = f.sealed_spools === undefined ? 0 : f.sealed_spools;
+      f.open_spools = f.open_spools === undefined ? 0 : f.open_spools;
+      activeSpoolCount += f.sealed_spools + f.open_spools;
+      if (activeSpoolCount > 100000) throw new Error("Il registro supera 100.000 bobine attive");
+      f.unit_weight_g = parseImportNumber(f.unit_weight_g, "Peso unitario", { min: Number.MIN_VALUE });
+      for (const field of ["total_weight_g", "remaining_weight_g", "used_weight_g", "removed_weight_g"]) {
+        if (f[field] !== undefined) f[field] = parseImportNumber(f[field], field);
+      }
+      f.unit_price = parseImportNumber(f.unit_price ?? f.price_per_spool_eur, "Prezzo unitario", { optional: true });
+      if (f.main_fraction !== undefined) f.main_fraction = parseImportNumber(f.main_fraction, "Frazione residua", { max: 1 });
+      if (f.open_spools_fractions !== undefined) {
+        if (!Array.isArray(f.open_spools_fractions)) throw new Error("Frazioni bobine: elenco richiesto");
+        f.open_spools_fractions = f.open_spools_fractions.map(value => parseImportNumber(value, "Frazione bobina", { max: 1 }));
+        if (f.spool_state_version === 1 && f.open_spools_fractions.length !== f.open_spools) throw new Error("Numero frazioni incoerente con le bobine aperte");
+      }
+      for (const field of ["spools_locations", "spools_variants", "spools_ids"]) {
+        if (f[field] !== undefined) {
+          if (!Array.isArray(f[field])) throw new Error(field + ": elenco richiesto");
+          f[field] = f[field].map(value => validateText(value, field));
+        }
+      }
+      if (f.spool_state_version === 1) {
+        if (!Array.isArray(f.open_spools_fractions) || f.open_spools_fractions.length !== f.open_spools) throw new Error("Frazioni bobine v1 incomplete");
+        for (const field of ["spools_locations", "spools_variants", "spools_ids"]) {
+          if (!Array.isArray(f[field]) || f[field].length !== f.sealed_spools + f.open_spools) throw new Error(field + ": lunghezza incoerente con le bobine attive");
+        }
+        if (f.spools_ids.some(id => !id) || new Set(f.spools_ids).size !== f.spools_ids.length) throw new Error("Identità bobine duplicate o mancanti");
+        for (const id of f.spools_ids) {
+          if (allSpoolIds.has(id)) throw new Error("Identità bobina condivisa tra filamenti: " + id);
+          allSpoolIds.add(id);
+        }
+      }
+      if (f.spools_prices !== undefined) {
+        if (!Array.isArray(f.spools_prices)) throw new Error("Prezzi bobine: elenco richiesto");
+        f.spools_prices = f.spools_prices.map(value => parseImportNumber(value, "Prezzo bobina", { optional: true }));
+      }
+      recalcWeightsForFilament(f);
+      return f;
+    });
+    const purchaseIds = new Set();
+    if (source.purchasedFilaments !== undefined && !Array.isArray(source.purchasedFilaments)) throw new Error("Acquisti: elenco richiesto");
+    const candidatePurchases = (source.purchasedFilaments || []).map(record => {
+      const p = cloneStateValue(requireRecord(record, "Acquisto"));
+      for (const field of ["id", "brand", "material", "variant", "color_code", "sku", "order_number", "order_date", "packaging_type"]) {
+        p[field] = validateText(p[field], "Acquisto: " + field);
+      }
+      p.id = p.id || makeStableId("purchase");
+      if (purchaseIds.has(p.id)) throw new Error("ID acquisto duplicato: " + p.id);
+      purchaseIds.add(p.id);
+      p.brand = canonicalizeBrand(p.brand);
+      p.material = canonicalizeMaterial(p.material);
+      p.quantity_spools = parseImportNumber(p.quantity_spools ?? p.quantitySpools ?? 0, "Quantità acquisto", { integer: true });
+      if (p.quantity_purchased_original !== undefined) p.quantity_purchased_original = parseImportNumber(p.quantity_purchased_original, "Quantità acquistata originale", { integer: true });
+      if (p.quantity_purchased_original !== undefined && p.quantity_purchased_original < p.quantity_spools) throw new Error("Quantità acquistata originale inferiore a quella residua");
+      p.unit_price = parseImportNumber(p.unit_price, "Prezzo acquisto", { optional: true });
+      p.unit_weight_g = parseImportNumber(p.unit_weight_g, "Peso acquisto", { optional: true, min: Number.MIN_VALUE });
+      return p;
+    });
+    if (source.consumptionHistory !== undefined && !Array.isArray(source.consumptionHistory)) throw new Error("Consumi: elenco richiesto");
+    const consumptionIds = new Set();
+    const candidateConsumption = (source.consumptionHistory || []).map(record => {
+      const entry = cloneStateValue(requireRecord(record, "Consumo"));
+      for (const field of ["id", "filamentId", "brand", "material", "variant", "timestamp"]) entry[field] = validateText(entry[field], "Consumo: " + field);
+      entry.id = entry.id || makeStableId("cons");
+      if (consumptionIds.has(entry.id)) throw new Error("ID consumo duplicato: " + entry.id);
+      consumptionIds.add(entry.id);
+      if (!Number.isFinite(Date.parse(entry.timestamp))) throw new Error("Data consumo non valida");
+      entry.gramsConsumed = parseImportNumber(entry.gramsConsumed, "Grammi consumati", { min: Number.MIN_VALUE });
+      return entry;
+    });
+    const settings = source.settings === undefined ? {} : requireRecord(source.settings, "Impostazioni");
+    const theme = settings.theme === undefined ? "dark" : settings.theme;
+    if (!["dark", "light"].includes(theme)) throw new Error("Tema non valido");
+    const inferredLocations = candidateFilaments.flatMap(f => [f.location, ...(f.spools_locations || [])]).filter(Boolean);
+    const candidate = {
+      schemaVersion: STATE_SCHEMA_VERSION,
+      app_version: INITIAL_VERSION,
+      data_revision: parseImportNumber(source.data_revision ?? 0, "Revisione dati", { integer: true }),
+      filaments: candidateFilaments,
+      purchasedFilaments: candidatePurchases,
+      brands: cleanBrandList(validateTextList(source.brands, "Marche", defaultBrands).concat(candidateFilaments.map(f => f.brand), candidatePurchases.map(p => p.brand))),
+      materials: cleanMaterialList(validateTextList(source.materials, "Materiali", defaultMaterialsOrdered).concat(candidateFilaments.map(f => f.material), candidatePurchases.map(p => p.material))),
+      colors: validateTextList(source.colors, "Colori", defaultColors),
+      consumptionHistory: candidateConsumption,
+      locations: validateTextList(source.locations, "Posizioni", inferredLocations),
+      settings: { theme, lowStockThreshold: parseImportNumber(settings.lowStockThreshold ?? 25, "Soglia scorte", { max: 100 }) }
+    };
+    if (includeHistory) {
+      for (const key of ["undoStack", "redoStack"]) {
+        if (source[key] !== undefined && !Array.isArray(source[key])) throw new Error("Cronologia non valida");
+        candidate[key] = (source[key] || []).slice(-MAX_UNDO_HISTORY).map(snapshot => ({
+          ...validateStateCandidate(snapshot, false),
+          actionDescription: validateText(snapshot.actionDescription, "Descrizione azione", "Azione"),
+          timestamp: validateText(snapshot.timestamp, "Data azione", new Date().toISOString())
+        }));
+      }
+    }
+    return candidate;
+  }
+
+  function captureStateSnapshot(includeHistory = false) {
+    const state = {
+      schemaVersion: STATE_SCHEMA_VERSION, app_version: INITIAL_VERSION, data_revision: dataRevision,
+      filaments, purchasedFilaments, brands: brandList, materials: materialList, colors: colorList,
+      consumptionHistory, locations: locationList, settings: appSettings
+    };
+    if (includeHistory) Object.assign(state, { undoStack, redoStack });
+    return cloneStateValue(state);
+  }
+
+  function applyStateSnapshot(state, restoreHistory = false, refreshSettings = true) {
+    const snapshot = cloneStateValue(state);
+    filaments = snapshot.filaments;
+    purchasedFilaments = snapshot.purchasedFilaments;
+    brandList = snapshot.brands;
+    materialList = snapshot.materials;
+    colorList = snapshot.colors;
+    consumptionHistory = snapshot.consumptionHistory;
+    locationList = snapshot.locations;
+    appSettings = snapshot.settings;
+    if (restoreHistory) {
+      undoStack = snapshot.undoStack || [];
+      redoStack = snapshot.redoStack || [];
+    }
+    if (refreshSettings) {
+      isApplyingState = true;
+      try { applyTheme(appSettings.theme); } finally { isApplyingState = false; }
+    }
+  }
+
+  function statePayload(state) {
+    const payload = { ...state };
+    delete payload.data_revision;
+    delete payload.saved_at;
+    return JSON.stringify(payload);
+  }
+
+  function reportStorageError(message, error) {
+    console.error(message, error || "");
+    updateAutoSaveIndicator(false);
+    showToast(message + " Esporta un backup prima di chiudere la pagina.", "error");
+  }
+
+  function commitMutation(actionDescription, mutate) {
+    if (!stateReady || storageWriteBlocked) {
+      reportStorageError(storageBlockReason || "Il registro non è pronto per le modifiche.");
+      return false;
+    }
+    const before = captureStateSnapshot(true);
+    try {
+      saveStateForUndo(actionDescription);
+      mutate();
+      const candidate = validateStateCandidate(captureStateSnapshot(true));
+      applyStateSnapshot(candidate, true);
+      if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return false; }
+      updateHistoryUI();
+      return true;
+    } catch (error) {
+      applyStateSnapshot(before, true);
+      updateHistoryUI();
+      showToast("Modifica non applicata: " + error.message, "error");
+      return false;
+    }
+  }
+
+  function installStorageConflictListener() {
+    if (storageListenerInstalled) return;
+    storageListenerInstalled = true;
+    window.addEventListener("storage", event => {
+      if ((event.key === STORAGE_KEY || event.key === null) && event.newValue !== lastKnownStorageRaw) {
+        storageWriteBlocked = true;
+        storageBlockReason = "Il registro è cambiato in un'altra scheda. Esporta le modifiche di questa scheda e ricarica.";
+        reportStorageError(storageBlockReason);
+      }
+    });
   }
 
   // Funzione di salvataggio effettivo
   function saveState(shouldIncrementVersion = false) {
-    if (isSaving) return; // Evita salvataggi simultanei
-    
-    // Incrementa la versione solo se esplicitamente richiesto (modifiche significative)
-    if (shouldIncrementVersion) {
-      incrementVersion();
+    // Il parametro legacy resta accettato: la versione app non cambia con i dati.
+    if (isSaving || !stateReady) return false;
+    if (storageWriteBlocked) {
+      reportStorageError(storageBlockReason || "Salvataggio bloccato per proteggere i dati.");
+      return false;
     }
-    
+    isSaving = true;
     try {
-      isSaving = true;
-      const state = {
-        filaments,
-        brands: brandList,
-        materials: materialList,
-        colors: colorList,
-        purchasedFilaments
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      // Salva anche la lista delle posizioni
-      localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
+      const currentRaw = localStorage.getItem(STORAGE_KEY);
+      if (currentRaw !== lastKnownStorageRaw) {
+        storageWriteBlocked = true;
+        storageBlockReason = "Un'altra scheda ha modificato il registro. Esporta questa copia e ricarica.";
+        throw new Error(storageBlockReason);
+      }
+      const state = validateStateCandidate(captureStateSnapshot(true));
+      const payload = statePayload(state);
+      if (payload === lastSavedPayload && currentRaw !== null) {
+        updateAutoSaveIndicator(true);
+        return true;
+      }
+      state.data_revision = dataRevision + 1;
+      state.saved_at = new Date().toISOString();
+      const raw = JSON.stringify(state);
+      // setItem sulla chiave principale è atomico: un errore quota conserva il registro precedente.
+      // La copia precedente è facoltativa e non impedisce il salvataggio principale se lo spazio è poco.
+      let recoveryWarning = false;
+      if (currentRaw !== null && lastKnownStorageValid) {
+        try { localStorage.setItem(LAST_GOOD_STATE_KEY, currentRaw); }
+        catch (error) { recoveryWarning = true; console.warn("Copia precedente non aggiornata:", error); }
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, raw);
+      } catch (error) {
+        const quotaExceeded = error.name === "QuotaExceededError" || /QuotaExceededError|quota/i.test(error.message || "");
+        if (!quotaExceeded || localStorage.getItem(LAST_GOOD_STATE_KEY) === null) throw error;
+        // Libera esclusivamente la copia secondaria; il registro precedente resta nella chiave primaria
+        // fino alla riuscita del singolo nuovo tentativo. Non si riduce la cronologia per nascondere l'errore.
+        localStorage.removeItem(LAST_GOOD_STATE_KEY);
+        recoveryWarning = true;
+        localStorage.setItem(STORAGE_KEY, raw);
+      }
+      lastKnownStorageRaw = raw;
+      lastKnownStorageValid = true;
+      lastSavedPayload = payload;
+      dataRevision = state.data_revision;
+      // Anche la memoria adotta gli stessi valori normalizzati (incluse identità bobine).
+      applyStateSnapshot(state, true, false);
       lastSaveTime = Date.now();
-      
-      // Aggiorna indicatore visivo (se presente)
       updateAutoSaveIndicator(true);
+      if (recoveryWarning) showToast("Registro salvato; spazio insufficiente per aggiornare la copia precedente. Esporta un backup.", "warning");
+      return true;
     } catch (error) {
-      console.error("Errore durante il salvataggio automatico:", error);
-      updateAutoSaveIndicator(false);
+      reportStorageError(storageBlockReason || "Salvataggio non riuscito: " + error.message, error);
+      return false;
     } finally {
       isSaving = false;
     }
   }
 
-  // Funzione di salvataggio automatico con debounce
   function autoSave() {
-    // Cancella il timeout precedente se esiste
-    if (autoSaveTimeout) {
-      clearTimeout(autoSaveTimeout);
-    }
-    
-    // Mostra indicatore "salvataggio in corso"
+    if (!stateReady || storageWriteBlocked) return;
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
     updateAutoSaveIndicator(null, true);
-    
-    // Imposta un nuovo timeout
     autoSaveTimeout = setTimeout(() => {
-      // Salvataggio automatico: NON incrementa la versione
-      saveState(false);
       autoSaveTimeout = null;
+      saveState();
     }, AUTO_SAVE_DEBOUNCE_MS);
   }
 
-  // Salvataggio periodico
   function startPeriodicAutoSave() {
-    if (autoSaveIntervalId) {
-      clearInterval(autoSaveIntervalId);
-    }
-    
+    if (autoSaveIntervalId) clearInterval(autoSaveIntervalId);
     autoSaveIntervalId = setInterval(() => {
-      // Salva solo se sono passati almeno AUTO_SAVE_DEBOUNCE_MS dall'ultimo salvataggio
-      if (!lastSaveTime || (Date.now() - lastSaveTime) >= AUTO_SAVE_DEBOUNCE_MS) {
-        // Salvataggio periodico: NON incrementa la versione
-        saveState(false);
-      }
+      if (stateReady && !storageWriteBlocked && (!lastSaveTime || Date.now() - lastSaveTime >= AUTO_SAVE_DEBOUNCE_MS)) saveState();
     }, AUTO_SAVE_INTERVAL_MS);
+    installStorageConflictListener();
   }
 
-  // Salvataggio all'uscita
   function setupBeforeUnloadSave() {
-    window.addEventListener("beforeunload", () => {
-      // Salva immediatamente senza debounce
-      if (autoSaveTimeout) {
-        clearTimeout(autoSaveTimeout);
-        autoSaveTimeout = null;
-      }
-      // Usa saveState diretto per salvataggio immediato
-      try {
-        const state = {
-          filaments,
-          brands: brandList,
-          materials: materialList,
-          colors: colorList,
-          purchasedFilaments
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
-      } catch (e) {
-        console.error("Errore salvataggio all'uscita:", e);
+    const flush = () => {
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+      autoSaveTimeout = null;
+      return !stateReady || (!storageWriteBlocked && saveState());
+    };
+    window.addEventListener("beforeunload", event => {
+      if (!flush()) {
+        event.preventDefault();
+        event.returnValue = "";
       }
     });
-    
-    // Salva anche quando la pagina diventa nascosta (es. cambio tab)
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        if (autoSaveTimeout) {
-          clearTimeout(autoSaveTimeout);
-          autoSaveTimeout = null;
-        }
-        // Salva immediatamente quando la pagina diventa nascosta
-        try {
-          const state = {
-            filaments,
-            brands: brandList,
-            materials: materialList,
-            colors: colorList,
-            purchasedFilaments
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-          localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
-        } catch (e) {
-          console.error("Errore salvataggio su visibilitychange:", e);
-        }
-      }
-    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden && !storageWriteBlocked) flush(); });
   }
 
   // Aggiorna indicatore visivo del salvataggio
@@ -2730,122 +2440,50 @@
   
   // Funzione per salvare solo le posizioni (usata quando si modificano le posizioni)
   function saveLocationList() {
-    localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
+    return saveState();
   }
 
   // Salva lo stato per undo/redo
   function saveStateForUndo(actionDescription = "Azione") {
-    const state = {
-      filaments: JSON.parse(JSON.stringify(filaments)),
-      brands: [...brandList],
-      materials: [...materialList],
-      colors: [...colorList],
-      purchasedFilaments: JSON.parse(JSON.stringify(purchasedFilaments)),
-      actionDescription,
-      timestamp: new Date().toISOString()
-    };
-    
-    // Aggiungi allo stack undo
-    undoStack.push(state);
-    
-    // Limita la dimensione dello stack
-    if (undoStack.length > MAX_UNDO_HISTORY) {
-      undoStack.shift();
-    }
-    
-    // Quando si fa una nuova azione, cancella lo stack redo
+    if (!stateReady || storageWriteBlocked) return false;
+    undoStack.push({ ...captureStateSnapshot(), actionDescription, timestamp: new Date().toISOString() });
+    if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
     redoStack = [];
-    
-    // Salva gli stack
-    saveUndoRedoStacks();
-    
-    // Aggiorna la UI della cronologia
     updateHistoryUI();
+    return true;
   }
 
-  // Funzione per annullare l'ultima azione
   function undoAction() {
-    if (undoStack.length === 0) {
-      showToast("Nessuna azione da annullare", "info");
-      return;
-    }
-    
-    // Salva lo stato corrente nello stack redo
-    const currentState = {
-      filaments: JSON.parse(JSON.stringify(filaments)),
-      brands: [...brandList],
-      materials: [...materialList],
-      colors: [...colorList],
-      purchasedFilaments: JSON.parse(JSON.stringify(purchasedFilaments)),
-      actionDescription: "Stato corrente",
-      timestamp: new Date().toISOString()
-    };
-    redoStack.push(currentState);
-    
-    // Ripristina lo stato precedente
-    const previousState = undoStack.pop();
-    if (previousState) {
-      filaments = previousState.filaments.map(f => ({ ...f }));
-      brandList = [...previousState.brands];
-      materialList = [...previousState.materials];
-      colorList = [...previousState.colors];
-      purchasedFilaments = previousState.purchasedFilaments.map(p => ({ ...p }));
-      
-      // Salva lo stato
-      autoSave();
-      renderAll();
-      
-      showToast(`Annullato: ${previousState.actionDescription}`, "success");
-      
-      // Salva gli stack
-      saveUndoRedoStacks();
-      
-      updateHistoryUI();
-    }
+    if (!undoStack.length) return showToast("Nessuna azione da annullare", "info");
+    const before = captureStateSnapshot(true);
+    const previous = undoStack.pop();
+    redoStack.push({ ...captureStateSnapshot(), actionDescription: previous.actionDescription, timestamp: new Date().toISOString() });
+    applyStateSnapshot(validateStateCandidate(previous, false));
+    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return; }
+    renderAll();
+    renderConsumptionChart();
+    renderConsumptionHistory();
+    renderConsumptionStats();
+    updateHistoryUI();
+    showToast("Annullato: " + previous.actionDescription, "success");
   }
 
-  // Funzione per ripristinare un'azione annullata
   function redoAction() {
-    if (redoStack.length === 0) {
-      showToast("Nessuna azione da ripristinare", "info");
-      return;
-    }
-    
-    // Salva lo stato corrente nello stack undo
-    const currentState = {
-      filaments: JSON.parse(JSON.stringify(filaments)),
-      brands: [...brandList],
-      materials: [...materialList],
-      colors: [...colorList],
-      purchasedFilaments: JSON.parse(JSON.stringify(purchasedFilaments)),
-      actionDescription: "Stato corrente",
-      timestamp: new Date().toISOString()
-    };
-    undoStack.push(currentState);
-    
-    // Ripristina lo stato successivo
-    const nextState = redoStack.pop();
-    if (nextState) {
-      filaments = nextState.filaments.map(f => ({ ...f }));
-      brandList = [...nextState.brands];
-      materialList = [...nextState.materials];
-      colorList = [...nextState.colors];
-      purchasedFilaments = nextState.purchasedFilaments.map(p => ({ ...p }));
-      
-      // Salva lo stato
-      autoSave();
-      renderAll();
-      
-      showToast(`Ripristinato: ${nextState.actionDescription}`, "success");
-      
-      // Salva gli stack
-      saveUndoRedoStacks();
-      
-      updateHistoryUI();
-    }
+    if (!redoStack.length) return showToast("Nessuna azione da ripristinare", "info");
+    const before = captureStateSnapshot(true);
+    const next = redoStack.pop();
+    undoStack.push({ ...captureStateSnapshot(), actionDescription: next.actionDescription, timestamp: new Date().toISOString() });
+    if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
+    applyStateSnapshot(validateStateCandidate(next, false));
+    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return; }
+    renderAll();
+    renderConsumptionChart();
+    renderConsumptionHistory();
+    renderConsumptionStats();
+    updateHistoryUI();
+    showToast("Ripristinato: " + next.actionDescription, "success");
   }
 
-  // Aggiorna la UI della cronologia
   function updateHistoryUI() {
     const undoBtn = document.getElementById("undoButton");
     const redoBtn = document.getElementById("redoButton");
@@ -2891,7 +2529,7 @@
           const date = new Date(state.timestamp);
           const timeStr = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
           item.innerHTML = `
-            <div style="font-weight: 500; color: var(--text-main);">${state.actionDescription}</div>
+            <div style="font-weight: 500; color: var(--text-main);">${escapeHtml(state.actionDescription)}</div>
             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">${timeStr}</div>
           `;
           
@@ -2931,7 +2569,7 @@
           const date = new Date(state.timestamp);
           const timeStr = date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
           item.innerHTML = `
-            <div style="font-weight: 500; color: var(--text-main);">${state.actionDescription}</div>
+            <div style="font-weight: 500; color: var(--text-main);">${escapeHtml(state.actionDescription)}</div>
             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">${timeStr}</div>
           `;
           
@@ -2956,45 +2594,15 @@
 
   // Funzione per tornare a uno stato specifico nella cronologia
   function restoreToHistoryState(targetIndex) {
-    // Trova lo stato target nello stack (contando dalla fine)
-    const targetState = undoStack[targetIndex];
-    if (!targetState) {
-      showToast("Stato non trovato nella cronologia", "error");
-      return;
-    }
-
-    // Salva lo stato corrente nello stack redo
-    const currentState = {
-      filaments: JSON.parse(JSON.stringify(filaments)),
-      brands: [...brandList],
-      materials: [...materialList],
-      colors: [...colorList],
-      purchasedFilaments: JSON.parse(JSON.stringify(purchasedFilaments)),
-      actionDescription: "Stato corrente",
-      timestamp: new Date().toISOString()
-    };
-    redoStack.push(currentState);
-
-    // Rimuovi tutti gli stati dopo quello target dallo stack undo
-    undoStack = undoStack.slice(0, targetIndex + 1);
-
-    // Ripristina lo stato target
-    filaments = targetState.filaments.map(f => ({ ...f }));
-    brandList = [...targetState.brands];
-    materialList = [...targetState.materials];
-    colorList = [...targetState.colors];
-    purchasedFilaments = targetState.purchasedFilaments.map(p => ({ ...p }));
-
-    // Salva lo stato
-    autoSave();
-    renderAll();
-    
-    showToast(`Ripristinato a: ${targetState.actionDescription}`, "success");
-    
-    // Salva gli stack
-    saveUndoRedoStacks();
-    
-    updateHistoryUI();
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= undoStack.length) return;
+    const previous = captureStateSnapshot(true);
+    const target = undoStack[targetIndex];
+    redoStack.push({ ...captureStateSnapshot(), actionDescription: target.actionDescription, timestamp: new Date().toISOString() });
+    undoStack = undoStack.slice(0, targetIndex);
+    applyStateSnapshot(validateStateCandidate(target, false));
+    if (!saveState()) { applyStateSnapshot(previous, true); updateHistoryUI(); return; }
+    refreshStateViews();
+    showToast("Ripristinato a: " + target.actionDescription, "success");
   }
 
   // Renderizza la lista della cronologia
@@ -3055,170 +2663,58 @@
   }
 
   function loadState() {
-    const brandsStored = localStorage.getItem(BRAND_LIST_KEY);
-    const materialsStored = localStorage.getItem(MATERIAL_LIST_KEY);
-    const colorsStored = localStorage.getItem(COLOR_LIST_KEY);
-    const locationsStored = localStorage.getItem(LOCATION_LIST_KEY);
-
-    brandList = brandsStored
-      ? JSON.parse(brandsStored)
-      : Array.from(new Set(defaultBrands));
-    brandList = cleanBrandList(brandList);
-
-    materialList = materialsStored
-      ? JSON.parse(materialsStored)
-      : Array.from(new Set(defaultMaterialsOrdered));
-    colorList = colorsStored
-      ? JSON.parse(colorsStored)
-      : Array.from(new Set(defaultColors));
-    
-    // Assicura che tutti i defaultColors siano sempre presenti in colorList
-    // Questo garantisce che i nuovi codici aggiunti al codice siano sempre disponibili
-    const missingColors = defaultColors.filter(c => !colorList.includes(c));
-    if (missingColors.length > 0) {
-      colorList = Array.from(new Set(colorList.concat(missingColors)));
-      // Salva la lista aggiornata
-      localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-      console.log(`Aggiunti ${missingColors.length} colori mancanti a colorList:`, missingColors);
-    }
-    
-    // Carica lista posizioni
-    if (locationsStored) {
-      try {
-        locationList = JSON.parse(locationsStored);
-        if (!Array.isArray(locationList) || locationList.length === 0) {
-          locationList = ["box Ikea", "Box", "scaffale 1", "scaffale 5", "scaffale 6"];
+    stateReady = false;
+    storageWriteBlocked = false;
+    storageBlockReason = "";
+    lastKnownStorageValid = false;
+    try {
+      const currentRaw = localStorage.getItem(STORAGE_KEY);
+      lastKnownStorageRaw = currentRaw;
+      let raw = currentRaw;
+      if (raw === null) {
+        for (const key of ["registroFilamentiState_v2", "registroFilamentiState_v1", "registroFilamentiState"]) {
+          const old = localStorage.getItem(key);
+          if (old !== null) { raw = old; break; }
         }
-      } catch (e) {
-        console.error("Errore nel caricamento delle posizioni:", e);
-        locationList = ["box Ikea", "Box", "scaffale 1", "scaffale 5", "scaffale 6"];
       }
-    }
-
-    // Prova a caricare da chiavi diverse (per retrocompatibilità)
-    const possibleKeys = [
-      STORAGE_KEY,
-      "registroFilamentiState_v2",
-      "registroFilamentiState_v1",
-      "registroFilamentiState"
-    ];
-    
-    let raw = null;
-    let usedKey = null;
-    
-    for (const key of possibleKeys) {
-      const data = localStorage.getItem(key);
-      if (data) {
-        raw = data;
-        usedKey = key;
-        console.log(`Dati trovati con chiave: ${key}`);
-        break;
+      let input = raw === null ? { filaments: [], purchasedFilaments: [] } : JSON.parse(raw);
+      requireRecord(input, "Registro salvato");
+      if (input.schemaVersion === undefined) {
+        // Solo la migrazione legge le chiavi separate. Dopo il primo salvataggio il v4 è autorevole.
+        const readLegacy = (key, fallback) => {
+          const value = localStorage.getItem(key);
+          return value === null ? fallback : JSON.parse(value);
+        };
+        input = { ...input };
+        input.brands = input.brands ?? readLegacy(BRAND_LIST_KEY, defaultBrands);
+        input.materials = input.materials ?? readLegacy(MATERIAL_LIST_KEY, defaultMaterialsOrdered);
+        input.colors = input.colors ?? readLegacy(COLOR_LIST_KEY, defaultColors);
+        input.locations = input.locations ?? readLegacy(LOCATION_LIST_KEY, undefined);
+        input.consumptionHistory = input.consumptionHistory ?? readLegacy(CONSUMPTION_HISTORY_KEY, []);
+        input.settings = input.settings ?? {
+          theme: localStorage.getItem(THEME_KEY) || "dark",
+          lowStockThreshold: localStorage.getItem(LOW_STOCK_THRESHOLD_KEY) ?? 25
+        };
+        // Gli snapshot legacy non comprendono consumi/posizioni e non possono garantire un undo coerente.
+        input.undoStack = [];
+        input.redoStack = [];
       }
+      const candidate = validateStateCandidate(input);
+      applyStateSnapshot(candidate, true);
+      dataRevision = candidate.data_revision;
+      lastKnownStorageValid = true;
+      lastSavedPayload = input.schemaVersion === STATE_SCHEMA_VERSION ? statePayload(candidate) : "";
+      stateReady = true;
+      installStorageConflictListener();
+      return true;
+    } catch (error) {
+      storageWriteBlocked = true;
+      storageBlockReason = "Dati salvati non validi: " + error.message + ". Il registro originale non verrà sovrascritto.";
+      reportStorageError(storageBlockReason, error);
+      return false;
     }
-    
-    if (raw) {
-      try {
-        const state = JSON.parse(raw);
-        console.log("Caricamento stato da localStorage. Filamenti trovati:", state.filaments?.length || 0);
-        
-        // Se abbiamo caricato da una chiave vecchia, migra alla nuova chiave
-        if (usedKey !== STORAGE_KEY) {
-          console.log(`Migrazione dati da ${usedKey} a ${STORAGE_KEY}`);
-          localStorage.setItem(STORAGE_KEY, raw);
-        }
-        
-        filaments = (state.filaments || []).map((f) => ({
-          ...f,
-          brand: canonicalizeBrand(f.brand),
-          // Assicura che packaging_type abbia un default
-          packaging_type: f.packaging_type || "spool",
-          // Assicura che unit_price sia null se non presente
-          unit_price: f.unit_price != null ? f.unit_price : null,
-          // Assicura che open_spools_fractions sia un array se presente
-          open_spools_fractions: Array.isArray(f.open_spools_fractions) ? f.open_spools_fractions : undefined
-        }));
-
-        console.log("Filamenti dopo mappatura:", filaments.length);
-
-        // Ricalcola i pesi per tutti i filamenti dopo il caricamento
-        filaments.forEach(f => {
-          recalcWeightsForFilament(f);
-        });
-
-        filaments = deduplicateFilamentsByIdentity(filaments);
-        console.log("Filamenti dopo deduplicazione:", filaments.length);
-
-        purchasedFilaments = Array.isArray(state.purchasedFilaments)
-          ? state.purchasedFilaments.map((p) => ({
-              ...p,
-              brand: canonicalizeBrand(p.brand)
-            }))
-          : [];
-
-        if (state.brands) {
-          brandList = cleanBrandList(brandList.concat(state.brands || []));
-        }
-        if (state.materials) {
-          materialList = Array.from(
-            new Set(state.materials.concat(materialList))
-          );
-        }
-        if (state.colors) {
-          colorList = Array.from(new Set(state.colors.concat(colorList)));
-        }
-
-        if (purchasedFilaments && purchasedFilaments.length) {
-          const purchasedBrands = purchasedFilaments
-            .map((p) => p.brand)
-            .filter(Boolean);
-          if (purchasedBrands.length) {
-            brandList = cleanBrandList(
-              brandList.concat(purchasedBrands)
-            );
-          }
-        }
-      } catch (e) {
-        console.error("Errore nel parse dello stato:", e);
-        if (raw && raw.length > 0) {
-          console.error("Dati raw che hanno causato l'errore:", raw.substring(0, 200));
-        }
-        filaments = [];
-        purchasedFilaments = [];
-        setTimeout(() => {
-          if (typeof showToast === 'function') {
-            showToast("Errore nel caricamento dei dati salvati. Controlla la console per dettagli.", "error");
-          } else {
-            alert("Errore nel caricamento dei dati salvati. Controlla la console per dettagli.");
-          }
-        }, 100);
-      }
-    } else {
-      console.log("Nessun dato trovato in localStorage con le chiavi:", possibleKeys);
-      const allKeys = Object.keys(localStorage);
-      const filamentKeys = allKeys.filter(k => k.toLowerCase().includes('filament') || k.toLowerCase().includes('registro'));
-      if (filamentKeys.length > 0) {
-        console.log("Chiavi trovate nel localStorage che potrebbero contenere dati:", filamentKeys);
-      }
-      filaments = [];
-      purchasedFilaments = [];
-    }
-
-    brandList = cleanBrandList(brandList);
-    localStorage.setItem(BRAND_LIST_KEY, JSON.stringify(brandList));
-    materialList = Array.from(new Set(materialList));
-    localStorage.setItem(MATERIAL_LIST_KEY, JSON.stringify(materialList));
-    colorList = Array.from(new Set(colorList));
-    localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-    
-    // Salva lista posizioni se non esiste
-    if (!locationsStored) {
-      localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
-    }
-    
-    // Carica storico consumi
-    loadConsumptionHistory();
   }
-  
+
   // Funzione helper per generare le opzioni dei dropdown posizione
   function generateLocationOptions(selectedValue = "") {
     // Normalizza il valore selezionato per il confronto (trim, lowercase)
@@ -3229,7 +2725,7 @@
       ${locationList.map(loc => {
         const normalizedLoc = loc ? loc.trim().toLowerCase() : "";
         const isSelected = normalizedLoc === normalizedSelected && normalizedSelected !== "";
-        return `<option value="${loc}" ${isSelected ? "selected" : ""}>${loc}</option>`;
+        return `<option value="${escapeHtml(loc)}" ${isSelected ? "selected" : ""}>${escapeHtml(loc)}</option>`;
       }).join("")}
     `;
   }
@@ -3275,25 +2771,21 @@
         if (newName === location) {
           return; // Nessun cambiamento
         }
-        if (locationList.includes(newName)) {
+        if (locationList.some((name, candidateIndex) => candidateIndex !== index && name.toLocaleLowerCase("it-IT") === newName.toLocaleLowerCase("it-IT"))) {
           showToast("Una posizione con questo nome esiste già.", "error");
           return;
         }
         
         const oldName = location;
-        locationList[index] = newName;
-        saveLocationList();
-        
-        // Aggiorna tutte le posizioni nei filamenti
-        filaments.forEach(f => {
-          if (f.location === oldName) {
-            f.location = newName;
-          }
-          if (f.spools_locations && Array.isArray(f.spools_locations)) {
-            f.spools_locations = f.spools_locations.map(loc => loc === oldName ? newName : loc);
-          }
-        });
-        autoSave();
+        if (!commitMutation(`Rinominata posizione: ${oldName}`, () => {
+          locationList[index] = newName;
+          filaments.forEach(f => {
+            if (f.location === oldName) f.location = newName;
+            if (Array.isArray(f.spools_locations)) {
+              f.spools_locations = f.spools_locations.map(loc => loc === oldName ? newName : loc);
+            }
+          });
+        })) return;
         renderAll();
         renderLocationsList();
         showToast(`Posizione "${oldName}" rinominata in "${newName}".`, "success");
@@ -3316,26 +2808,21 @@
         );
         
         if (usedInFilaments) {
-          const ok = confirm(
+          const ok = window.confirm(
             `La posizione "${location}" è utilizzata da alcuni filamenti. Eliminarla rimuoverà la posizione da tutti i filamenti. Continuare?`
           );
           if (!ok) return;
-          
-          // Rimuovi la posizione da tutti i filamenti
+        }
+        if (!commitMutation(`Eliminata posizione: ${location}`, () => {
+          locationList.splice(index, 1);
           filaments.forEach(f => {
-            if (f.location === location) {
-              f.location = "";
-            }
-            if (f.spools_locations && Array.isArray(f.spools_locations)) {
+            if (f.location === location) f.location = "";
+            if (Array.isArray(f.spools_locations)) {
               f.spools_locations = f.spools_locations.map(loc => loc === location ? "" : loc);
             }
           });
-          autoSave();
-          renderAll();
-        }
-        
-        locationList.splice(index, 1);
-        saveLocationList();
+        })) return;
+        renderAll();
         renderLocationsList();
         showToast(`Posizione "${location}" eliminata.`, "success");
       });
@@ -3352,159 +2839,59 @@
   // =============================================
   
   function loadConsumptionHistory() {
-    const raw = localStorage.getItem(CONSUMPTION_HISTORY_KEY);
-    if (raw) {
-      try {
-        consumptionHistory = JSON.parse(raw);
-      } catch (e) {
-        consumptionHistory = [];
-      }
-    } else {
-      consumptionHistory = [];
-    }
+    // Lo storico fa parte dello snapshot atomico già caricato da loadState.
+    return consumptionHistory;
   }
 
   function saveConsumptionHistory() {
-    localStorage.setItem(CONSUMPTION_HISTORY_KEY, JSON.stringify(consumptionHistory));
+    return saveState();
   }
 
-  function addConsumptionEntry(filament, gramsConsumed) {
-    if (gramsConsumed <= 0) return;
-    
+  function addConsumptionEntry(filament, gramsConsumed, options = {}) {
+    if (!Number.isFinite(gramsConsumed) || gramsConsumed <= 0) return;
     const entry = {
-      id: `cons-${Date.now().toString(16)}`,
-      timestamp: new Date().toISOString(),
-      filamentId: filament.id,
-      brand: filament.brand,
-      material: filament.material,
-      variant: filament.variant,
-      gramsConsumed: gramsConsumed
+      id: typeof makeStableId === "function" ? makeStableId("cons") : createSpoolId(),
+      timestamp: new Date().toISOString(), filamentId: filament.id, brand: filament.brand,
+      material: filament.material, variant: filament.variant, gramsConsumed
     };
-    
     consumptionHistory.push(entry);
-    saveConsumptionHistory();
-    renderConsumptionChart();
-    renderConsumptionHistory();
-    renderConsumptionStats();
+    if (options.persist !== false) saveConsumptionHistory();
   }
 
   function calculateConsumptionByDifference() {
-    // Raggruppa filamenti acquistati per identità
-    const purchasedMap = new Map();
-    
-    purchasedFilaments.forEach(p => {
-      const brand = canonicalizeBrand(p.brand || "");
-      const material = canonicalizeMaterial(p.material || "");
-      const variant = (p.variant || "").trim();
-      const colorCode = (p.color_code || "").trim();
-      const unitWeight = p.unit_weight_g || 1000;
-      
-      const key = `${brand}|${material}|${variant}|${colorCode}|${unitWeight}`;
-      
-      if (!purchasedMap.has(key)) {
-        purchasedMap.set(key, {
-          brand,
-          material,
-          variant,
-          color_code: colorCode,
-          unit_weight_g: unitWeight,
-          quantity_spools: 0,
-          total_weight_g: 0
-        });
-      }
-      
-      const entry = purchasedMap.get(key);
-      const qty = p.quantity_spools != null ? p.quantity_spools : (p.quantitySpools || 0);
-      entry.quantity_spools += qty;
-      entry.total_weight_g += qty * unitWeight;
-    });
-    
-    // Raggruppa filamenti presenti per identità
-    const stockMap = new Map();
-    
-    filaments.forEach(f => {
+    const grouped = new Map();
+    const getEntry = f => {
       const brand = canonicalizeBrand(f.brand || "");
       const material = canonicalizeMaterial(f.material || "");
-      const variant = (f.variant || "").trim();
-      const colorCode = (f.color_code || "").trim();
-      const unitWeight = f.unit_weight_g || 1000;
-      
-      const key = `${brand}|${material}|${variant}|${colorCode}|${unitWeight}`;
-      
-      if (!stockMap.has(key)) {
-        stockMap.set(key, {
-          brand,
-          material,
-          variant,
-          color_code: colorCode,
-          unit_weight_g: unitWeight,
-          total_weight_g: 0,
-          remaining_weight_g: 0
-        });
-      }
-      
-      const entry = stockMap.get(key);
-      entry.total_weight_g += f.total_weight_g || 0;
-      entry.remaining_weight_g += f.remaining_weight_g || 0;
-    });
-    
-    // Calcola differenze
-    const results = [];
-    let totalPurchased = 0;
-    let totalPresent = 0;
-    let totalConsumed = 0;
-    
-    // Per ogni filamento acquistato, calcola la differenza
-    purchasedMap.forEach((purchased, key) => {
-      const stock = stockMap.get(key) || {
-        total_weight_g: 0,
-        remaining_weight_g: 0
-      };
-      
-      const consumed = purchased.total_weight_g - stock.remaining_weight_g;
-      
-      totalPurchased += purchased.total_weight_g;
-      totalPresent += stock.remaining_weight_g;
-      totalConsumed += consumed;
-      
-      if (consumed > 0 || stock.remaining_weight_g > 0) {
-        results.push({
-          ...purchased,
-          present_weight_g: stock.remaining_weight_g,
-          consumed_weight_g: consumed
-        });
-      }
-    });
-    
-    // Aggiungi filamenti presenti ma non acquistati (potrebbero essere stati aggiunti manualmente)
-    stockMap.forEach((stock, key) => {
-      if (!purchasedMap.has(key)) {
-        totalPresent += stock.remaining_weight_g;
-        results.push({
-          brand: stock.brand,
-          material: stock.material,
-          variant: stock.variant,
-          color_code: stock.color_code,
-          unit_weight_g: stock.unit_weight_g,
-          quantity_spools: 0,
-          total_weight_g: 0,
-          present_weight_g: stock.remaining_weight_g,
-          consumed_weight_g: -stock.remaining_weight_g // Negativo perché non era acquistato
-        });
-      }
-    });
-    
-    // Ordina per consumato (decrescente)
-    results.sort((a, b) => b.consumed_weight_g - a.consumed_weight_g);
-    
-    return {
-      results,
-      totals: {
-        purchased: totalPurchased,
-        present: totalPresent,
-        consumed: totalConsumed
-      }
+      const unit = f.unit_weight_g || 1000;
+      const key = JSON.stringify([brand, material, (f.variant || "").trim(), (f.color_code || "").trim(), unit]);
+      if (!grouped.has(key)) grouped.set(key, { brand, material, variant: f.variant || "", color_code: f.color_code || "", unit_weight_g: unit,
+        quantity_spools: 0, total_weight_g: 0, present_weight_g: 0, consumed_weight_g: 0 });
+      return grouped.get(key);
     };
+    purchasedFilaments.forEach(p => {
+      const pending = p.quantity_spools ?? p.quantitySpools ?? 0;
+      if (pending <= 0) return;
+      const entry = getEntry(p);
+      entry.quantity_spools += pending;
+      entry.total_weight_g += pending * entry.unit_weight_g;
+      entry.present_weight_g += pending * entry.unit_weight_g;
+    });
+    filaments.forEach(f => {
+      const entry = getEntry(f);
+      // Il bilancio fisico usa il carico registrato e rettificato dell'inventario.
+      // Gli acquisti originali restano nello storico fatture, non vengono sommati due volte.
+      entry.quantity_spools += f.spools_total || 0;
+      entry.total_weight_g += f.total_weight_g || 0;
+      entry.present_weight_g += f.remaining_weight_g || 0;
+    });
+    const results = Array.from(grouped.values());
+    results.forEach(entry => { entry.consumed_weight_g = entry.total_weight_g - entry.present_weight_g; });
+    results.sort((a, b) => b.consumed_weight_g - a.consumed_weight_g);
+    return { results, totals: results.reduce((totals, entry) => ({
+      purchased: totals.purchased + entry.total_weight_g, present: totals.present + entry.present_weight_g,
+      consumed: totals.consumed + entry.consumed_weight_g
+    }), { purchased: 0, present: 0, consumed: 0 }) };
   }
   
   function renderConsumptionByDifference() {
@@ -3526,7 +2913,7 @@
     const summaryHtml = `
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
         <div style="padding: 1rem; background: var(--surface); border-radius: 0.5rem; border: 1px solid var(--border-subtle);">
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Acquistato totale</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Massa iniziale registrata</div>
           <div style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">${formatNumber(calc.totals.purchased, 0)} g</div>
         </div>
         <div style="padding: 1rem; background: var(--surface); border-radius: 0.5rem; border: 1px solid var(--border-subtle);">
@@ -3549,7 +2936,7 @@
               <th>Marca</th>
               <th>Materiale</th>
               <th>Colore</th>
-              <th style="text-align: right;">Acquistato</th>
+              <th style="text-align: right;">Caricato</th>
               <th style="text-align: right;">Presente</th>
               <th style="text-align: right;">Consumato</th>
             </tr>
@@ -3559,9 +2946,9 @@
               const consumedColor = r.consumed_weight_g > 0 ? "var(--danger)" : r.consumed_weight_g < 0 ? "var(--warning)" : "var(--text-muted)";
               return `
                 <tr>
-                  <td>${r.brand || "-"}</td>
-                  <td>${r.material || "-"}</td>
-                  <td>${r.variant || "-"}</td>
+                  <td>${escapeHtml(r.brand || "-")}</td>
+                  <td>${escapeHtml(r.material || "-")}</td>
+                  <td>${escapeHtml(r.variant || "-")}</td>
                   <td style="text-align: right;">${formatNumber(r.total_weight_g, 0)} g</td>
                   <td style="text-align: right;">${formatNumber(r.present_weight_g, 0)} g</td>
                   <td style="text-align: right; font-weight: 600; color: ${consumedColor};">
@@ -3632,18 +3019,23 @@
       
       return `<tr>
         <td>${dateStr}</td>
-        <td>${filamentStr}</td>
+        <td>${escapeHtml(filamentStr)}</td>
         <td style="font-weight:600;color:var(--danger);">-${formatNumber(entry.gramsConsumed, 0)} g</td>
         <td>
-          <button type="button" class="btn-xs btn-outline" onclick="deleteConsumptionEntry('${entry.id}')" title="Elimina">✕</button>
+          <button type="button" class="btn-xs btn-outline" data-consumption-id="${escapeHtml(entry.id)}" title="Elimina">✕</button>
         </td>
       </tr>`;
     }).join("");
+    tbody.querySelectorAll("button[data-consumption-id]").forEach(button => {
+      button.addEventListener("click", () => deleteConsumptionEntry(button.dataset.consumptionId));
+    });
   }
 
   function deleteConsumptionEntry(entryId) {
-    consumptionHistory = consumptionHistory.filter(e => e.id !== entryId);
-    saveConsumptionHistory();
+    if (!consumptionHistory.some(entry => entry.id === entryId)) return;
+    if (!commitMutation("Eliminata voce storico consumi", () => {
+      consumptionHistory = consumptionHistory.filter(e => e.id !== entryId);
+    })) return;
     renderConsumptionChart();
     renderConsumptionHistory();
     renderConsumptionStats();
@@ -3651,9 +3043,8 @@
   }
 
   function clearAllConsumptionHistory() {
-    if (!confirm("Vuoi davvero cancellare tutto lo storico consumi?")) return;
-    consumptionHistory = [];
-    saveConsumptionHistory();
+    if (!consumptionHistory.length || !window.confirm("Vuoi davvero cancellare tutto lo storico consumi?")) return;
+    if (!commitMutation("Cancellato storico consumi", () => { consumptionHistory = []; })) return;
     renderConsumptionChart();
     renderConsumptionHistory();
     renderConsumptionStats();
@@ -3715,17 +3106,17 @@
     }
 
     // Raggruppa per giorno
-    const dailyData = {};
+    const dailyData = Object.create(null);
     for (let i = 0; i < daysBack; i++) {
       const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
       const key = d.toISOString().slice(0, 10);
-      dailyData[key] = { total: 0, byMaterial: {} };
+      dailyData[key] = { total: 0, byMaterial: Object.create(null) };
     }
 
     filtered.forEach(entry => {
       const key = entry.timestamp.slice(0, 10);
       if (!dailyData[key]) {
-        dailyData[key] = { total: 0, byMaterial: {} };
+        dailyData[key] = { total: 0, byMaterial: Object.create(null) };
       }
       dailyData[key].total += entry.gramsConsumed || 0;
       
@@ -3826,7 +3217,7 @@
         <!-- Points -->
         ${points.map(p => `
           <circle cx="${p.x}" cy="${p.y}" r="4" fill="#3b82f6" stroke="#fff" stroke-width="2"/>
-          <title>${p.day}: ${formatNumber(p.value, 0)}g</title>
+          <title>${escapeHtml(p.day)}: ${formatNumber(p.value, 0)}g</title>
         `).join("")}
         
         <!-- X axis labels -->
@@ -3845,12 +3236,12 @@
     
     if (legendEl && allMaterials.size > 0) {
       legendEl.innerHTML = Array.from(allMaterials).map(mat => {
-        const color = materialColors[mat] || materialColors["Altro"];
+        const color = Object.hasOwn(materialColors, mat) ? materialColors[mat] : materialColors["Altro"];
         const total = filtered.filter(e => (e.material || "Altro") === mat)
           .reduce((sum, e) => sum + (e.gramsConsumed || 0), 0);
         return `<div class="chart-legend-item">
           <span class="chart-legend-dot" style="background:${color}"></span>
-          ${mat}: ${formatNumber(total, 0)}g
+          ${escapeHtml(mat)}: ${formatNumber(total, 0)}g
         </div>`;
       }).join("");
     }
@@ -3860,294 +3251,131 @@
   // FUNZIONI FILTRI
   // =============================================
 
-  // Crea il floating layer se non esiste (una sola volta, all'avvio dell'app)
+  let activeMultiSelectDropdown = null;
+  const multiSelectControllers = new Map();
+
   function initFloatingLayer() {
-    let floatingLayer = document.getElementById('floating-layer');
-    if (!floatingLayer) {
-      floatingLayer = document.createElement('div');
-      floatingLayer.id = 'floating-layer';
-      // Assicurati che sia l'ULTIMO figlio del body
-      document.body.appendChild(floatingLayer);
+    let layer = document.getElementById("floating-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "floating-layer";
+      document.body.appendChild(layer);
+      // Gli editor possono ricostruire i propri campi mentre un menu è aperto.
+      new MutationObserver(() => {
+        if (activeColorDropdown && !activeColorDropdown.isConnected) closeColorDropdown(activeColorDropdown);
+        if (activeMultiSelectDropdown && !activeMultiSelectDropdown.wrapper.isConnected) activeMultiSelectDropdown.close();
+      }).observe(document.body, { childList: true, subtree: true });
     }
-    return floatingLayer;
+    return layer;
   }
 
-  // Funzione helper per creare dropdown con checkbox multipli
   function createMultiSelectDropdown(containerId, options, filterKey, placeholder, allLabel) {
     const container = document.getElementById(containerId);
     if (!container) return;
-
-    // Crea wrapper
+    multiSelectControllers.get(containerId)?.destroy();
+    const controller = new AbortController();
+    const listen = (target, type, handler, extra = {}) => target.addEventListener(type, handler, { ...extra, signal: controller.signal });
     const wrapper = document.createElement("div");
     wrapper.className = "multi-select-wrapper";
-    wrapper.setAttribute("data-filter-key", filterKey);
-
-    // Crea trigger button
+    wrapper.dataset.filterKey = filterKey;
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.className = "multi-select-trigger";
-    
-    function updateTriggerText() {
-      const selected = stockFilters[filterKey] && Array.isArray(stockFilters[filterKey]) ? stockFilters[filterKey] : [];
-      if (selected.length === 0) {
-        trigger.textContent = allLabel || placeholder;
-      } else if (selected.length === 1) {
-        trigger.textContent = selected[0];
-      } else {
-        trigger.textContent = `${selected.length} selezionat${selected.length > 1 ? 'i' : 'o'}`;
-      }
-    }
-    updateTriggerText();
-
-    // Crea menu dropdown
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", containerId + "Menu");
     const menu = document.createElement("div");
+    menu.id = containerId + "Menu";
     menu.className = "multi-select-menu";
-
-    // Container per le opzioni
+    menu.hidden = true;
     const optionsContainer = document.createElement("div");
     optionsContainer.className = "multi-select-options";
-    optionsContainer.style.cssText = "max-height: 200px; overflow-y: auto; padding: 0.25rem;";
-
-    // Popola opzioni con checkbox
+    function updateTriggerText() {
+      const selected = Array.isArray(stockFilters[filterKey]) ? stockFilters[filterKey] : [];
+      const labelFor = value => { const option = options.find(option => (typeof option === "string" ? option : option.value) === value); return typeof option === "string" ? option : option?.label || value; };
+      trigger.textContent = !selected.length ? allLabel || placeholder : selected.length === 1 ? labelFor(selected[0]) : selected.length + " selezionati";
+    }
     options.forEach(option => {
-      const optionValue = typeof option === "string" ? option : option.value;
-      const optionLabel = typeof option === "string" ? option : option.label;
-      
+      const value = typeof option === "string" ? option : option.value;
       const label = document.createElement("label");
-      label.style.cssText = "display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.5rem; cursor: pointer; border-radius: 0.25rem; transition: background 0.2s; flex-direction: row;";
-      label.addEventListener("mouseenter", () => {
-        label.style.background = "rgba(59, 130, 246, 0.1)";
-      });
-      label.addEventListener("mouseleave", () => {
-        label.style.background = "transparent";
-      });
-      
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
-      checkbox.value = optionValue;
-      checkbox.checked = stockFilters[filterKey] && Array.isArray(stockFilters[filterKey]) && stockFilters[filterKey].includes(optionValue);
-      checkbox.style.cssText = "width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; margin: 0;";
-      checkbox.addEventListener("change", () => {
-        if (!Array.isArray(stockFilters[filterKey])) stockFilters[filterKey] = [];
-        if (checkbox.checked) {
-          if (!stockFilters[filterKey].includes(optionValue)) stockFilters[filterKey].push(optionValue);
-        } else {
-          stockFilters[filterKey] = stockFilters[filterKey].filter(v => v !== optionValue);
-        }
+      checkbox.value = value;
+      checkbox.checked = (stockFilters[filterKey] || []).includes(value);
+      listen(checkbox, "change", () => {
+        const selected = new Set(stockFilters[filterKey] || []);
+        if (checkbox.checked) selected.add(value); else selected.delete(value);
+        stockFilters[filterKey] = Array.from(selected);
         updateTriggerText();
         renderFilamentTable();
       });
-      
-      const span = document.createElement("span");
-      span.textContent = optionLabel;
-      span.style.cssText = "font-size: 0.85rem; flex: 1;";
-      
-      label.appendChild(checkbox);
-      label.appendChild(span);
+      const text = document.createElement("span");
+      text.textContent = typeof option === "string" ? option : option.label;
+      label.append(checkbox, text);
       optionsContainer.appendChild(label);
     });
-
     menu.appendChild(optionsContainer);
-    wrapper.appendChild(trigger);
-    wrapper.appendChild(menu);
-
-    // Inizializza floating layer
-    const floatingLayer = initFloatingLayer();
-    let menuInPortal = false;
-    let originalParent = null;
-
-    // ===== FUNZIONE POSIZIONAMENTO =====
+    wrapper.append(trigger, menu);
+    container.replaceChildren(wrapper);
+    updateTriggerText();
+    let repositionFrame = 0;
     function positionMenu() {
-      const triggerRect = trigger.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-      
-      // SEMPRE apri sotto il trigger inizialmente
-      let topPosition = triggerRect.bottom + 4;
-      
-      // DEBUG
-      console.log('positionMenu:', {
-        triggerBottom: triggerRect.bottom,
-        triggerTop: triggerRect.top,
-        viewportHeight,
-        initialTop: topPosition
-      });
-      
-      // Calcola la posizione orizzontale
-      let leftPosition = triggerRect.left;
-      const menuWidth = Math.max(triggerRect.width, 200);
-      
-      // Assicura che non esca dallo schermo a destra
-      if (leftPosition + menuWidth > viewportWidth - 16) {
-        leftPosition = viewportWidth - menuWidth - 16;
-      }
-      
-      // Assicura che non esca dallo schermo a sinistra
-      if (leftPosition < 8) {
-        leftPosition = 8;
-      }
-      
-      // Applica stili inline per la posizione
-      menu.style.position = 'fixed';
-      menu.style.top = `${topPosition}px`;
-      menu.style.left = `${leftPosition}px`;
-      menu.style.width = `${menuWidth}px`;
-      
-      console.log('Applied styles:', {
-        top: menu.style.top,
-        left: menu.style.left,
-        position: menu.style.position
-      });
-      
-      // Dopo il rendering, aggiusta se il menu esce dallo schermo
-      requestAnimationFrame(() => {
-        const menuHeight = menu.offsetHeight || 200;
-        const menuBottom = topPosition + menuHeight;
-        
-        console.log('After RAF:', {
-          menuHeight,
-          menuBottom,
-          viewportHeight,
-          needsAdjust: menuBottom > viewportHeight - 8
-        });
-        
-        // Se il menu esce dal basso dello schermo
-        if (menuBottom > viewportHeight - 8) {
-          // Calcola quanto spazio c'è sopra e sotto
-          const spaceAbove = triggerRect.top;
-          const spaceBelow = viewportHeight - triggerRect.bottom;
-          
-          if (spaceAbove > spaceBelow && spaceAbove > menuHeight) {
-            // C'è più spazio sopra e ci sta: apri sopra
-            topPosition = triggerRect.top - menuHeight - 4;
-          } else {
-            // Non c'è abbastanza spazio sopra: mantieni sotto ma limita
-            topPosition = viewportHeight - menuHeight - 8;
-          }
-          
-          // Assicurati che non vada sopra lo schermo
-          if (topPosition < 8) {
-            topPosition = 8;
-          }
-          
-          menu.style.top = `${topPosition}px`;
-          console.log('Adjusted top to:', topPosition);
-        }
-      });
+      if (menu.hidden) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.min(Math.max(rect.width, 200), innerWidth - 16);
+      menu.style.width = width + "px";
+      menu.style.maxHeight = Math.min(300, innerHeight - 16) + "px";
+      const height = menu.getBoundingClientRect().height;
+      const top = innerHeight - rect.bottom - 8 >= height ? rect.bottom + 4 : rect.top >= height + 8 ? rect.top - height - 4 : Math.max(8, innerHeight - height - 8);
+      menu.style.top = top + "px";
+      menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - width - 8)) + "px";
     }
-
-    // ===== FUNZIONE APERTURA =====
+    function reposition() { cancelAnimationFrame(repositionFrame); repositionFrame = requestAnimationFrame(positionMenu); }
+    function closeMenu(restoreFocus = false) {
+      cancelAnimationFrame(repositionFrame);
+      menu.hidden = true;
+      menu.classList.remove("is-portal-active");
+      wrapper.classList.remove("open");
+      trigger.setAttribute("aria-expanded", "false");
+      wrapper.appendChild(menu);
+      menu.removeAttribute("style");
+      if (activeMultiSelectDropdown === api) activeMultiSelectDropdown = null;
+      document.body.classList.remove("dropdown-open");
+      if (restoreFocus && trigger.isConnected) trigger.focus({ preventScroll: true });
+    }
     function openMenu() {
-      // Salva il parent originale per poter reinserire il menu alla chiusura
-      if (!menuInPortal) {
-        originalParent = menu.parentNode;
-      }
-      
-      // Sposta nel floating layer
-      floatingLayer.appendChild(menu);
-      menuInPortal = true;
-      
-      // Aggiungi classe indipendente (NON dipende da .multi-select-wrapper)
-      menu.classList.add('is-portal-active');
-      wrapper.classList.add('open');
-      
-      // IMPORTANTE: Aggiungi classe al body per poter abbassare z-index tabella via CSS
-      document.body.classList.add('dropdown-open');
-      
-      // Calcola posizione iniziale
+      if (activeMultiSelectDropdown) activeMultiSelectDropdown.close();
+      if (activeColorDropdown) closeColorDropdown(activeColorDropdown);
+      menu.querySelectorAll("input[type='checkbox']").forEach(checkbox => {
+        checkbox.checked = (stockFilters[filterKey] || []).includes(checkbox.value);
+      });
+      updateTriggerText();
+      activeMultiSelectDropdown = api;
+      initFloatingLayer().appendChild(menu);
+      menu.hidden = false;
+      menu.classList.add("is-portal-active");
+      wrapper.classList.add("open");
+      trigger.setAttribute("aria-expanded", "true");
+      document.body.classList.add("dropdown-open");
       positionMenu();
-      
-      // IMPORTANTE: Ricalcola al frame successivo per evitare problemi di timing
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          positionMenu();
-        });
-      });
-      
-      // Chiudi altri dropdown aperti
-      document.querySelectorAll('.multi-select-wrapper.open').forEach(w => {
-        if (w !== wrapper) {
-          const otherMenu = w.querySelector('.multi-select-menu');
-          if (otherMenu) {
-            otherMenu.classList.remove('is-portal-active');
-            const otherOriginalParent = otherMenu.getAttribute('data-original-parent');
-            if (otherOriginalParent) {
-              const parent = document.querySelector(otherOriginalParent);
-              if (parent) parent.appendChild(otherMenu);
-            } else {
-              w.appendChild(otherMenu);
-            }
-          }
-          w.classList.remove('open');
-        }
-      });
+      requestAnimationFrame(() => requestAnimationFrame(positionMenu));
+      menu.querySelector("input")?.focus({ preventScroll: true });
     }
-
-    // ===== FUNZIONE CHIUSURA =====
-    function closeMenu() {
-      // Rimuovi classe indipendente
-      menu.classList.remove('is-portal-active');
-      wrapper.classList.remove('open');
-      
-      // Rimuovi classe dal body (solo se non ci sono altri dropdown aperti)
-      const otherOpenDropdowns = document.querySelectorAll('.multi-select-wrapper.open');
-      if (otherOpenDropdowns.length === 0) {
-        document.body.classList.remove('dropdown-open');
-      }
-      
-      // Riporta il menu nel parent originale
-      if (menuInPortal && originalParent) {
-        originalParent.appendChild(menu);
-        menuInPortal = false;
-      }
-      
-      // Pulisci stili inline
-      menu.style.top = '';
-      menu.style.left = '';
-      menu.style.width = '';
-    }
-
-    // ===== EVENT LISTENERS =====
-    
-    // Click sul trigger
-    trigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (wrapper.classList.contains('open')) {
-        closeMenu();
-      } else {
-        openMenu();
-      }
+    const api = { wrapper, close: closeMenu, destroy: () => { closeMenu(); controller.abort(); } };
+    multiSelectControllers.set(containerId, api);
+    listen(trigger, "click", event => { event.stopPropagation(); if (wrapper.classList.contains("open")) closeMenu(); else openMenu(); });
+    listen(trigger, "keydown", event => { if (event.key === "ArrowDown") { event.preventDefault(); openMenu(); } });
+    listen(document, "click", event => { if (wrapper.classList.contains("open") && !wrapper.contains(event.target) && !menu.contains(event.target)) closeMenu(); });
+    listen(document, "keydown", event => { if (event.key === "Escape" && wrapper.classList.contains("open")) { closeMenu(true); event.preventDefault(); } });
+    listen(menu, "keydown", event => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const inputs = Array.from(menu.querySelectorAll("input"));
+      if (!inputs.length) return;
+      event.preventDefault();
+      const next = (inputs.indexOf(document.activeElement) + (event.key === "ArrowDown" ? 1 : -1) + inputs.length) % inputs.length;
+      inputs[next].focus();
     });
-
-    // Click fuori chiude il menu
-    document.addEventListener('click', (e) => {
-      if (wrapper.classList.contains('open') && 
-          !wrapper.contains(e.target) && 
-          !menu.contains(e.target)) {
-        closeMenu();
-      }
-    });
-
-    // Escape chiude il menu
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && wrapper.classList.contains('open')) {
-        closeMenu();
-      }
-    });
-
-    // Riposiziona su scroll/resize
-    let repositionTimeout;
-    const handleReposition = () => {
-      if (wrapper.classList.contains('open')) {
-        clearTimeout(repositionTimeout);
-        repositionTimeout = setTimeout(positionMenu, 10);
-      }
-    };
-    window.addEventListener('scroll', handleReposition, true);
-    window.addEventListener('resize', handleReposition);
-
-    container.innerHTML = "";
-    container.appendChild(wrapper);
+    listen(window, "scroll", reposition, { capture: true });
+    listen(window, "resize", reposition);
   }
 
   function populateFilterOptions() {
@@ -4385,12 +3613,12 @@
           : "Passa al tema scuro"
       );
     }
-    localStorage.setItem(THEME_KEY, theme);
+    appSettings.theme = theme;
+    if (stateReady && !isApplyingState) autoSave();
   }
 
   function initTheme() {
-    const saved = localStorage.getItem(THEME_KEY);
-    const startTheme = saved || "dark";
+    const startTheme = appSettings.theme;
     applyTheme(startTheme);
 
     const toggleBtn = document.getElementById("themeToggleButton");
@@ -4399,7 +3627,7 @@
         const current =
           document.documentElement.getAttribute("data-theme") || "dark";
         const next = current === "dark" ? "light" : "dark";
-        applyTheme(next);
+        commitMutation("Modificato tema", () => { appSettings.theme = next; });
       });
     }
   }
@@ -4519,319 +3747,72 @@
   }
 
   function handleAddFilament() {
-    const brandSel = document.getElementById("addBrandSelect");
-    const brandCustom = document.getElementById("addBrandCustom");
-    const matSel = document.getElementById("addMaterialSelect");
-    const matCustom = document.getElementById("addMaterialCustom");
-    const colorCustom = document.getElementById("addColorCustom");
-    const colorCodeInput = document.getElementById("addColorCodeInput");
-    const spoolsTotalInput = document.getElementById(
-      "addSpoolsTotalInput"
-    );
-    const sealedInput = document.getElementById(
-      "addSealedSpoolsInput"
-    );
-    const openInput = document.getElementById("addOpenSpoolsInput");
-    const unitWeightPreset = document.getElementById(
-      "addUnitWeightPreset"
-    );
-    const unitWeightInput = document.getElementById(
-      "addUnitWeightInput"
-    );
-    const packagingTypeSelect = document.getElementById("addPackagingType");
-    const priceInput = document.getElementById("addPriceInput");
-    const supplierInput = document.getElementById(
-      "addSupplierInput"
-    );
-    const notesInput = document.getElementById("addNotesInput");
-    const fractionSelect = document.getElementById("addFractionSelect");
-
-    let brand = "";
-    if (brandSel.value === "__custom__") {
-      brand = brandCustom.value.trim();
-    } else {
-      brand = brandSel.value;
-    }
-    brand = canonicalizeBrand(brand);
-
-    let material = "";
-    if (matSel.value === "__custom__") {
-      material = matCustom.value.trim();
-    } else {
-      material = matSel.value;
-    }
-
-    // Leggi colore dal nuovo dropdown personalizzato
-    let color = "";
-    const dropdownColorValue = window.addColorDropdown ? window.addColorDropdown.getValue() : "";
-    if (dropdownColorValue && dropdownColorValue !== "__custom__") {
-      color = dropdownColorValue;
-    } else if (colorCustom && colorCustom.value.trim()) {
-      color = colorCustom.value.trim();
-    }
-
-    const colorCode =
-      colorCodeInput && colorCodeInput.value
-        ? colorCodeInput.value.trim()
-        : "";
-
-    const packagingType = packagingTypeSelect ? packagingTypeSelect.value : "spool";
-    let unitPrice = priceInput && priceInput.value ? parseFloat(priceInput.value) : null;
-    
-    // Se non c'è prezzo e c'è un trasferimento da purchased, recupera il prezzo dall'entry
-    if ((unitPrice == null || unitPrice === 0) && pendingPurchasedTransfer) {
-      const idx = pendingPurchasedTransfer.entryIndex;
-      if (typeof idx === "number" && idx >= 0 && idx < purchasedFilaments.length) {
-        const pEntry = purchasedFilaments[idx];
-        if (pEntry.unit_price != null && pEntry.unit_price > 0) {
-          unitPrice = pEntry.unit_price;
-        }
+    try {
+      const value = id => document.getElementById(id)?.value ?? "";
+      const brand = canonicalizeBrand(value("addBrandSelect") === "__custom__" ? value("addBrandCustom").trim() : value("addBrandSelect"));
+      const material = canonicalizeMaterial(value("addMaterialSelect") === "__custom__" ? value("addMaterialCustom").trim() : value("addMaterialSelect"));
+      const selected = window.addColorDropdown?.getValue();
+      const variant = selected && selected !== "__custom__" ? selected : value("addColorCustom").trim();
+      if (!brand || !material || !variant) throw new Error("Marca, materiale e colore sono obbligatori.");
+      const sealed = requireSpoolNumber(value("addSealedSpoolsInput") || "0", "Sigillate", true);
+      const open = requireSpoolNumber(value("addOpenSpoolsInput") || "0", "Aperte", true);
+      const count = sealed + open;
+      if (count < 1 || count > 10000) throw new Error("Inserisci da 1 a 10000 bobine.");
+      const preset = value("addUnitWeightPreset");
+      const unit = requireSpoolNumber(preset && preset !== "__custom__" ? preset : value("addUnitWeightInput"), "Peso per bobina");
+      if (unit <= 0) throw new Error("Il peso per bobina deve essere maggiore di zero.");
+      const fraction = requireSpoolNumber(value("addFractionSelect") || "1", "Frazione residua");
+      if (fraction > 1) throw new Error("La frazione residua non può superare 1.");
+      const priceText = value("addPriceInput").trim();
+      let price = priceText === "" ? null : requireSpoolNumber(priceText, "Prezzo");
+      let purchase = null;
+      if (pendingPurchasedTransfer) {
+        purchase = purchasedFilaments[pendingPurchasedTransfer.entryIndex];
+        const available = purchase?.quantity_spools ?? purchase?.quantitySpools ?? 0;
+        if (!purchase || count > available || count > pendingPurchasedTransfer.maxQuantity) throw new Error("La quantità supera le bobine acquistate disponibili.");
+        if (price === null) price = purchase.unit_price ?? null;
       }
-    }
-    
-    // Se ancora non c'è prezzo, cerca nelle fatture importate per match
-    if ((unitPrice == null || unitPrice === 0) && brand && material && color) {
-      const fBrand = canonicalizeBrand(brand);
-      const fMaterial = canonicalizeMaterial(material);
-      const fVariant = color.trim();
-      const fColorCode = colorCode.trim();
-      
-      const match = purchasedFilaments.find(p => {
-        const pBrand = canonicalizeBrand(p.brand || "");
-        const pMaterial = canonicalizeMaterial(p.material || "");
-        const pVariant = (p.variant || "").trim();
-        const pColorCode = (p.color_code || "").trim();
-        
-        const brandMatch = pBrand === fBrand;
-        const materialMatch = pMaterial === fMaterial;
-        const variantMatch = pVariant.toLowerCase() === fVariant.toLowerCase();
-        const colorCodeMatch = !fColorCode || !pColorCode || pColorCode === fColorCode;
-        
-        return brandMatch && materialMatch && variantMatch && colorCodeMatch && 
-               p.unit_price != null && p.unit_price > 0;
-      });
-      
-      if (match && match.unit_price != null) {
-        unitPrice = match.unit_price;
+      const f = { id: createSpoolId(), brand, material, variant, color_code: value("addColorCodeInput").trim(),
+        packaging_type: value("addPackagingType") || "spool", unit_weight_g: unit, unit_price: price,
+        supplier: value("addSupplierInput").trim(), notes: value("addNotesInput").trim(),
+        sealed_spools: sealed, open_spools: open, finished_spools: 0, spools_total: count,
+        total_weight_g: count * unit, spool_state_version: 1,
+        open_spools_fractions: Array.from({ length: open }, (_, index) => index === 0 ? fraction : 1),
+        spools_locations: Array.from({ length: count }, (_, index) => value(`addSpoolLocation_${index}`).trim()) };
+      if (purchase) f.source_purchase_id = purchase.id;
+      recalcWeightsForFilament(f);
+      const next = deduplicateFilamentsByIdentity([...filaments, f]);
+      const previous = captureDomainState();
+      saveStateForUndo(`Aggiunto filamento: ${brand} – ${material} – ${variant}`);
+      filaments = next;
+      if (purchase) {
+        const available = purchase.quantity_spools ?? purchase.quantitySpools ?? 0;
+        purchase.quantity_purchased_original = purchase.quantity_purchased_original ?? available;
+        purchase.quantity_spools = available - count;
+        if ("quantitySpools" in purchase) purchase.quantitySpools = purchase.quantity_spools;
       }
-    }
-
-    const sealedSpoolsRaw = parseInt(sealedInput.value || "0", 10);
-    const openSpoolsRaw = parseInt(openInput.value || "0", 10);
-    const sealedSpools = isNaN(sealedSpoolsRaw) ? 0 : sealedSpoolsRaw;
-    const openSpools = isNaN(openSpoolsRaw) ? 0 : openSpoolsRaw;
-
-    let unitWeight = 0;
-    if (
-      unitWeightPreset &&
-      unitWeightPreset.value &&
-      unitWeightPreset.value !== "__custom__"
-    ) {
-      unitWeight = parseFloat(unitWeightPreset.value);
-    } else {
-      const customWeight = parseFloat(unitWeightInput.value);
-      unitWeight = isNaN(customWeight) ? 0 : customWeight;
-    }
-
-    const supplier = supplierInput.value.trim();
-    const notes = notesInput.value.trim();
-    let mainFraction = parseFloat(fractionSelect.value || "1");
-
-    if (!brand) {
-      showToast("Seleziona o inserisci una marca.", "error");
-      return;
-    }
-    if (!material) {
-      showToast("Seleziona o inserisci un materiale.", "error");
-      return;
-    }
-    if (!color) {
-      showToast(
-        "Seleziona o inserisci un colore/variante.",
-        "error"
-      );
-      return;
-    }
-    if (sealedSpools < 0 || openSpools < 0) {
-      showToast(
-        "I numeri di bobine nuove/aperti devono essere positivi.",
-        "error"
-      );
-      return;
-    }
-
-    const spoolsTotal = sealedSpools + openSpools;
-
-    if (!spoolsTotal || spoolsTotal <= 0) {
-      showToast(
-        "Inserisci almeno una bobina nuova o aperta per questo filamento.",
-        "error"
-      );
-      return;
-    }
-
-    if (!unitWeight || unitWeight <= 0 || isNaN(unitWeight)) {
-      showToast(
-        "Inserisci i grammi per bobina (es. 1000).",
-        "error"
-      );
-      return;
-    }
-
-    // Leggi le posizioni per ogni bobina
-    const spoolsLocations = [];
-    for (let i = 0; i < spoolsTotal; i++) {
-      const locationSelect = document.getElementById(`addSpoolLocation_${i}`);
-      if (locationSelect) {
-        spoolsLocations.push(locationSelect.value.trim() || "");
-      } else {
-        spoolsLocations.push("");
-      }
-    }
-
-    if (!brandList.includes(brand)) {
-      brandList.push(brand);
-      brandList = cleanBrandList(brandList);
-      localStorage.setItem(BRAND_LIST_KEY, JSON.stringify(brandList));
-      renderBrandOptions();
-    }
-    if (!materialList.includes(material)) {
-      materialList.push(material);
-      materialList = Array.from(new Set(materialList));
-      localStorage.setItem(
-        MATERIAL_LIST_KEY,
-        JSON.stringify(materialList)
-      );
-      renderMaterialOptions();
-    }
-    if (!colorList.includes(color)) {
-      colorList.push(color);
-      colorList = Array.from(new Set(colorList));
-      localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-    }
-
-    const id = Date.now().toString() + Math.random().toString(16).slice(2);
-
-    const totalWeight = spoolsTotal * unitWeight;
-
-    const filament = {
-      id,
-      brand,
-      material,
-      variant: color,
-      color_code: colorCode,
-      packaging_type: packagingType,
-      spools_total: spoolsTotal,
-      sealed_spools: sealedSpools,
-      open_spools: openSpools,
-      unit_weight_g: unitWeight,
-      total_weight_g: totalWeight,
-      remaining_weight_g: 0,
-      used_weight_g: 0,
-      main_fraction: openSpools > 0 ? mainFraction : 1,
-      spools_locations: spoolsLocations.length > 0 ? spoolsLocations : undefined,
-      unit_price: unitPrice,
-      supplier,
-      notes
-    };
-
-    // Calcolo coerente di residuo / usato.
-    recalcWeightsForFilament(filament);
-
-    // Salva stato per undo
-    saveStateForUndo(`Aggiunto filamento: ${brand} – ${material} – ${color}`);
-
-    filaments.push(filament);
-    filaments = deduplicateFilamentsByIdentity(filaments);
-
-    let transferredSpools = 0;
-    if (pendingPurchasedTransfer && typeof filament.spools_total === "number") {
-      const idx = pendingPurchasedTransfer.entryIndex;
-      if (typeof idx === "number" && idx >= 0 && idx < purchasedFilaments.length) {
-        const pEntry = purchasedFilaments[idx];
-        const invoiceQtyRaw =
-          pEntry.quantity_spools != null
-            ? pEntry.quantity_spools
-            : pEntry.quantitySpools != null
-            ? pEntry.quantitySpools
-            : 0;
-        const spoolsToAdd = filament.spools_total || 0;
-        const maxAllowed =
-          pendingPurchasedTransfer.maxQuantity || spoolsToAdd;
-        const toDeduct = Math.min(invoiceQtyRaw, maxAllowed, spoolsToAdd);
-        if (toDeduct > 0) {
-          transferredSpools = toDeduct;
-          const newQty = invoiceQtyRaw - toDeduct;
-          if ("quantity_spools" in pEntry || !("quantitySpools" in pEntry)) {
-            pEntry.quantity_spools = newQty;
-          } else {
-            pEntry.quantitySpools = newQty;
-          }
-          if (newQty <= 0) {
-            purchasedFilaments.splice(idx, 1);
-          }
-        }
-      }
+      if (!brandList.includes(brand)) brandList.push(brand);
+      if (!materialList.includes(material)) materialList.push(material);
+      if (!colorList.includes(variant)) colorList.push(variant);
+      if (!commitDomainState(previous)) return;
       pendingPurchasedTransfer = null;
-    }
-
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
-    renderColorOptions();
-    renderAll();
-
-    brandSel.value = "";
-    brandCustom.value = "";
-    matSel.value = "";
-    matCustom.value = "";
-    colorSel.value = "";
-    colorCustom.value = "";
-    if (colorCodeInput) colorCodeInput.value = "";
-    if (spoolsTotalInput) spoolsTotalInput.value = "";
-    sealedInput.value = "";
-    openInput.value = "";
-    
-    // Reset posizioni
-    const locationsContainer = document.getElementById("addSpoolsLocationsContainer");
-    const locationsList = document.getElementById("addSpoolsLocationsList");
-    if (locationsContainer) locationsContainer.style.display = "none";
-    if (locationsList) locationsList.innerHTML = "";
-
-    if (unitWeightPreset) {
-      unitWeightPreset.value = "1000";
-      try {
-        unitWeightPreset.dispatchEvent(new Event("change"));
-      } catch (e) {
-        const evt = document.createEvent("HTMLEvents");
-        evt.initEvent("change", true, false);
-        unitWeightPreset.dispatchEvent(evt);
-      }
-    } else if (unitWeightInput) {
-      unitWeightInput.value = "";
-    }
-
-    supplierInput.value = "";
-    notesInput.value = "";
-    fractionSelect.value = "1";
-    updateColorPreviewFromSelection();
-
-    let toastMsg = "Filamento aggiunto al magazzino disponibile.";
-    if (transferredSpools > 0) {
-      toastMsg += " Trasferite " + transferredSpools + " bobine dal magazzino filamenti comprati.";
-    }
-    showToast(toastMsg, "success");
+      renderBrandOptions(); renderMaterialOptions(); renderColorOptions(); renderAll();
+      ["addBrandSelect", "addBrandCustom", "addMaterialSelect", "addMaterialCustom", "addColorCustom", "addColorCodeInput",
+        "addSpoolsTotalInput", "addSealedSpoolsInput", "addOpenSpoolsInput", "addSupplierInput", "addNotesInput", "addPriceInput"].forEach(id => {
+        const element = document.getElementById(id); if (element) element.value = "";
+      });
+      if (window.addColorDropdown) window.addColorDropdown.setValue("");
+      const fractionSelect = document.getElementById("addFractionSelect"); if (fractionSelect) fractionSelect.value = "1";
+      const locations = document.getElementById("addSpoolsLocationsList"); if (locations) locations.replaceChildren();
+      const locationsContainer = document.getElementById("addSpoolsLocationsContainer"); if (locationsContainer) locationsContainer.style.display = "none";
+      updateColorPreviewFromSelection();
+      showToast("Filamento aggiunto al magazzino disponibile.", "success");
+    } catch (error) { showToast(error.message || "Dati non validi.", "error"); }
   }
 
   function isLowStock(f) {
-    const ratio =
-      f.total_weight_g > 0
-        ? f.remaining_weight_g / f.total_weight_g
-        : 0;
-    const stockSpools = f.sealed_spools + f.open_spools;
-    const lastOpen =
-      stockSpools === 1 && f.open_spools === 1 && f.main_fraction < 1;
-
-    return ratio <= 0.25 || lastOpen;
+    const activeCapacity = ((f.sealed_spools || 0) + (f.open_spools || 0)) * (f.unit_weight_g || 0);
+    return activeCapacity > 0 && (f.remaining_weight_g || 0) / activeCapacity <= getLowStockThreshold() / 100;
   }
 
   function renderFilamentTable() {
@@ -4847,7 +3828,7 @@
 
     tbody.innerHTML = "";
 
-    let filtered = filaments.slice();
+    let filtered = filaments.filter(f => (f.sealed_spools || 0) + (f.open_spools || 0) > 0);
     console.log("Filamenti dopo slice:", filtered.length);
     
     // Applica filtri dropdown
@@ -4858,22 +3839,9 @@
     if (currentSearch.trim()) {
       const term = currentSearch.toLowerCase();
       filtered = filtered.filter((f) => {
-        const hay =
-          (f.brand || "") +
-          " " +
-          (f.material || "") +
-          " " +
-          (f.variant || "") +
-          " " +
-          (f.color_code || "") +
-          " " +
-          (f.packaging_type || "") +
-          " " +
-          (f.supplier || "") +
-          " " +
-          (f.location || "") +
-          " " +
-          (f.notes || "");
+        const hay = [f.brand, f.material, f.variant, f.color_code, f.packaging_type,
+          f.supplier, f.location, f.notes, ...(f.spools_variants || []), ...(f.spools_locations || [])]
+          .filter(Boolean).join(" ");
         return hay.toLowerCase().includes(term);
       });
     }
@@ -4900,7 +3868,7 @@
       const tr = document.createElement("tr");
       const td = document.createElement("td");
       td.colSpan = 18;
-      const hasFilters = stockFilters.brand || stockFilters.material || stockFilters.packaging || currentSearch.trim();
+      const hasFilters = Object.values(stockFilters).some(values => values.length > 0) || currentSearch.trim();
       td.innerHTML = hasFilters
         ? '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none"><path d="M3 4h18l-7 8v6l-4 2v-8z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="empty-state-title">Nessun risultato con i filtri attuali.</div><div class="empty-state-text">Prova a modificare o resettare i filtri.</div></div>'
         : '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M8 9h8M8 12h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M6 5V4h12v1" stroke="currentColor" stroke-width="1.4"/></svg><div class="empty-state-title">Il magazzino è vuoto.</div><div class="empty-state-text">Aggiungi il primo filamento oppure importa un JSON esportato in precedenza.</div></div>';
@@ -4912,138 +3880,21 @@
     const rowsToSort = []; // Array per memorizzare i dati delle righe prima del rendering
 
     filtered.forEach((f) => {
-      // Raggruppa le bobine per posizione E colore
-      const locationsColorsMap = new Map(); // Map<"location|color", {count, sealed, open, openFractions, color}>
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      const remainingWeight = f.remaining_weight_g || 0;
-      
-      // Salta i filamenti completamente finiti (residuo 0 o nessuna bobina con residuo 0)
-      // Questi non dovrebbero apparire nel magazzino disponibili (sezione 3a)
-      // Non c'è una sezione separata per le bobine terminate, vengono semplicemente nascoste
-      if (remainingWeight === 0 || (totalSpools === 0 && remainingWeight === 0)) {
-        return; // Salta questo filamento - è finito, non va mostrato nel magazzino disponibili
-      }
-      
-      // Se ha spools_locations, raggruppa per posizione e colore
-      if (f.spools_locations && Array.isArray(f.spools_locations) && f.spools_locations.length > 0) {
-        f.spools_locations.forEach((location, index) => {
-          const loc = location && location.trim() !== "" ? location : "";
-          // Ottieni il colore specifico della bobina, o usa il colore principale
-          const spoolColor = (f.spools_variants && Array.isArray(f.spools_variants) && f.spools_variants[index] && f.spools_variants[index].trim() !== "")
-            ? f.spools_variants[index]
-            : f.variant;
-          
-          const key = `${loc}|${spoolColor}`;
-          if (!locationsColorsMap.has(key)) {
-            locationsColorsMap.set(key, {
-              location: loc,
-              color: spoolColor,
-              count: 0,
-              sealed: 0,
-              open: 0,
-              openFractions: []
-            });
-          }
-          const group = locationsColorsMap.get(key);
-          group.count++;
-          if (index < (f.sealed_spools || 0)) {
-            group.sealed++;
-          } else {
-            group.open++;
-            const openIndex = index - (f.sealed_spools || 0);
-            if (f.open_spools_fractions && Array.isArray(f.open_spools_fractions) && openIndex < f.open_spools_fractions.length) {
-              group.openFractions.push(f.open_spools_fractions[openIndex]);
-            } else {
-              group.openFractions.push(1);
-            }
-          }
+      const locationsColorsMap = new Map();
+      const normalized = JSON.parse(JSON.stringify(f));
+      recalcWeightsForFilament(normalized);
+      getActiveFilamentSpools(normalized).forEach(spool => {
+        const key = JSON.stringify([spool.location, spool.variant]);
+        if (!locationsColorsMap.has(key)) locationsColorsMap.set(key, {
+          location: spool.location, color: spool.variant, count: 0, sealed: 0, open: 0, openFractions: [], spoolIds: []
         });
-      } else if (f.location && f.location.trim() !== "") {
-        // Se usa il campo location globale, raggruppa per colore
-        const defaultLocation = f.location;
-        // Se ci sono colori individuali, raggruppa per colore
-        if (f.spools_variants && Array.isArray(f.spools_variants) && f.spools_variants.length > 0) {
-          f.spools_variants.forEach((spoolColor, index) => {
-            const color = spoolColor && spoolColor.trim() !== "" ? spoolColor : f.variant;
-            const key = `${defaultLocation}|${color}`;
-            if (!locationsColorsMap.has(key)) {
-              locationsColorsMap.set(key, {
-                location: defaultLocation,
-                color: color,
-                count: 0,
-                sealed: 0,
-                open: 0,
-                openFractions: []
-              });
-            }
-            const group = locationsColorsMap.get(key);
-            group.count++;
-            if (index < (f.sealed_spools || 0)) {
-              group.sealed++;
-            } else {
-              group.open++;
-              const openIndex = index - (f.sealed_spools || 0);
-              if (f.open_spools_fractions && Array.isArray(f.open_spools_fractions) && openIndex < f.open_spools_fractions.length) {
-                group.openFractions.push(f.open_spools_fractions[openIndex]);
-              } else {
-                group.openFractions.push(1);
-              }
-            }
-          });
-        } else {
-          // Nessun colore individuale, usa il colore principale
-          locationsColorsMap.set(`${defaultLocation}|${f.variant}`, {
-            location: defaultLocation,
-            color: f.variant,
-            count: totalSpools,
-            sealed: f.sealed_spools || 0,
-            open: f.open_spools || 0,
-            openFractions: f.open_spools_fractions || []
-          });
-        }
-      } else {
-        // Nessuna posizione, raggruppa per colore
-        if (f.spools_variants && Array.isArray(f.spools_variants) && f.spools_variants.length > 0) {
-          f.spools_variants.forEach((spoolColor, index) => {
-            const color = spoolColor && spoolColor.trim() !== "" ? spoolColor : f.variant;
-            const key = `|${color}`;
-            if (!locationsColorsMap.has(key)) {
-              locationsColorsMap.set(key, {
-                location: "",
-                color: color,
-                count: 0,
-                sealed: 0,
-                open: 0,
-                openFractions: []
-              });
-            }
-            const group = locationsColorsMap.get(key);
-            group.count++;
-            if (index < (f.sealed_spools || 0)) {
-              group.sealed++;
-            } else {
-              group.open++;
-              const openIndex = index - (f.sealed_spools || 0);
-              if (f.open_spools_fractions && Array.isArray(f.open_spools_fractions) && openIndex < f.open_spools_fractions.length) {
-                group.openFractions.push(f.open_spools_fractions[openIndex]);
-              } else {
-                group.openFractions.push(1);
-              }
-            }
-          });
-        } else {
-          // Nessun colore individuale, usa il colore principale
-          locationsColorsMap.set(`|${f.variant}`, {
-            location: "",
-            color: f.variant,
-            count: totalSpools,
-            sealed: f.sealed_spools || 0,
-            open: f.open_spools || 0,
-            openFractions: f.open_spools_fractions || []
-          });
-        }
-      }
-      
+        const group = locationsColorsMap.get(key);
+        group.count++;
+        group.spoolIds.push(spool.id);
+        if (spool.sealed) group.sealed++;
+        else { group.open++; group.openFractions.push(spool.fraction); }
+      });
+
       // Crea una riga per ogni combinazione posizione+colore
       locationsColorsMap.forEach((group) => {
         // Calcola peso residuo per questo gruppo
@@ -5077,10 +3928,8 @@
       const dir = sortState.direction === "asc" ? 1 : -1;
       
       rowsToSort.sort((a, b) => {
-        // Per remaining_weight_g, ordina per percentuale residua del gruppo
-        if (field === "remaining_weight_g") {
-          return (a.ratio - b.ratio) * dir;
-        }
+        if (field === "remaining_weight_g") return (a.groupRemainingWeight - b.groupRemainingWeight) * dir;
+        if (field === "remaining_ratio") return (a.ratio - b.ratio) * dir;
         
         // Per location, usa la posizione del gruppo (group.location) e raggruppa per posizione
         if (field === "location") {
@@ -5218,11 +4067,11 @@
         `;
 
       tr.innerHTML = `
-        <td class="select-column"><input type="checkbox" class="filament-select-checkbox" data-id="${f.id}"></td>
-        <td>${canonicalizeBrand(f.brand) || "-"}</td>
-        <td>${f.material || "-"}</td>
+        <td class="select-column"><input type="checkbox" class="filament-select-checkbox" data-id="${escapeHtml(f.id)}" data-spool-ids='${escapeHtml(JSON.stringify(group.spoolIds))}'></td>
+        <td>${escapeHtml(canonicalizeBrand(f.brand) || "-")}</td>
+        <td>${escapeHtml(f.material || "-")}</td>
         <td>${pillHtml}</td>
-        <td>${f.color_code || "-"}</td>
+        <td>${escapeHtml(f.color_code || "-")}</td>
         <td>${packagingLabel}</td>
           <td style="text-align: center; padding: 0.35rem 0.25rem;">${group.count}</td>
           <td style="text-align: center; padding: 0.35rem 0.25rem;">${group.sealed}</td>
@@ -5232,10 +4081,10 @@
           <td style="text-align: center; padding: 0.35rem 0.25rem;">${formatNumber(groupRemainingWeight)}</td>
           <td style="padding: 0.35rem 0.5rem; vertical-align: middle;">${barHtml}</td>
           <td style="white-space: nowrap; padding: 0.35rem 0.25rem; text-align: center;">${priceDisplay}</td>
-          <td style="padding: 0.35rem 0.25rem;">${group.location || "-"}</td>
+          <td style="padding: 0.35rem 0.25rem;">${escapeHtml(group.location || "-")}</td>
           <td style="white-space: nowrap;">
             <button type="button" class="btn-action btn-success" data-id="${
-            f.id
+            escapeHtml(f.id)
           }" title="Modifica filamento">
               <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;">
               <path d="M16.474 5.408l2.118 2.118M18 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
@@ -5243,8 +4092,8 @@
               <span>Modifica</span>
           </button>
             <button type="button" class="btn-action btn-success" data-id="${
-              f.id
-            }" title="Elimina filamento" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: var(--danger);">
+              escapeHtml(f.id)
+            }" data-spool-ids='${escapeHtml(JSON.stringify(group.spoolIds))}' title="Elimina bobine della riga" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: var(--danger);">
               <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;">
               <path d="M6.5 7.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               <path d="M9 7.5V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -5266,76 +4115,41 @@
   function initResizableColumns() {
     const table = document.getElementById("filamentTable");
     if (!table) return;
-    
-    // Rimuovi handler precedenti se esistono
-    const existingHandles = table.querySelectorAll(".resize-handle");
-    existingHandles.forEach(h => h.remove());
-    
-    const headers = table.querySelectorAll("th.resizable");
-    headers.forEach((header) => {
-      let isResizing = false;
-      let startX = 0;
-      let startWidth = 0;
-      
-      const resizeHandle = document.createElement("div");
-      resizeHandle.className = "resize-handle";
-      resizeHandle.style.cssText = `
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        width: 4px;
-        cursor: col-resize;
-        background: transparent;
-        z-index: 10;
-      `;
-      
-      if (header.style.position !== "relative") {
-        header.style.position = "relative";
+    table.querySelectorAll("th.resizable").forEach(header => {
+      if (header.querySelector(".resize-handle")) return;
+      const handle = document.createElement("div");
+      handle.className = "resize-handle";
+      handle.tabIndex = 0;
+      handle.setAttribute("role", "separator");
+      handle.setAttribute("aria-orientation", "vertical");
+      handle.setAttribute("aria-label", "Larghezza colonna " + header.textContent.trim());
+      header.appendChild(handle);
+      let drag = null;
+      function setWidth(width) {
+        const minimum = parseFloat(getComputedStyle(header).minWidth) || 45;
+        header.style.width = Math.max(minimum, width) + "px";
+        handle.setAttribute("aria-valuenow", String(Math.round(Math.max(minimum, width))));
+        const index = Array.from(header.parentElement.children).indexOf(header);
+        table.querySelectorAll("tbody tr").forEach(row => { if (row.children[index]) row.children[index].style.width = header.style.width; });
       }
-      header.appendChild(resizeHandle);
-      
-      resizeHandle.addEventListener("mousedown", (e) => {
-        isResizing = true;
-        startX = e.pageX;
-        startWidth = header.offsetWidth;
+      handle.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        drag = { x: event.clientX, width: header.getBoundingClientRect().width };
         header.classList.add("resizing");
-        document.body.style.cursor = "col-resize";
-        document.body.style.userSelect = "none";
-        e.preventDefault();
-        e.stopPropagation();
+        handle.setPointerCapture(event.pointerId);
+        event.preventDefault(); event.stopPropagation();
       });
-      
-      const handleMouseMove = (e) => {
-        if (!isResizing) return;
-        
-        const diff = e.pageX - startX;
-        const minWidth = header.style.minWidth ? parseInt(header.style.minWidth) : 45;
-        const newWidth = Math.max(minWidth, startWidth + diff);
-        header.style.width = newWidth + "px";
-        
-        // Aggiorna anche tutte le celle della colonna
-        const colIndex = Array.from(header.parentElement.children).indexOf(header);
-        const rows = table.querySelectorAll("tbody tr");
-        rows.forEach(row => {
-          const cell = row.children[colIndex];
-          if (cell) {
-            cell.style.width = newWidth + "px";
-          }
-        });
-      };
-      
-      const handleMouseUp = () => {
-        if (isResizing) {
-          isResizing = false;
-          header.classList.remove("resizing");
-          document.body.style.cursor = "";
-          document.body.style.userSelect = "";
-        }
-      };
-      
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
+      handle.addEventListener("pointermove", event => { if (drag) setWidth(drag.width + event.clientX - drag.x); });
+      const finish = () => { drag = null; header.classList.remove("resizing"); };
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+      handle.addEventListener("lostpointercapture", finish);
+      handle.addEventListener("click", event => event.stopPropagation());
+      handle.addEventListener("keydown", event => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault(); event.stopPropagation();
+        setWidth(header.getBoundingClientRect().width + (event.key === "ArrowRight" ? 10 : -10));
+      });
     });
   }
 
@@ -5357,7 +4171,7 @@
     }
 
     // Applica filtri dropdown
-    let filtered = applyPurchasedFilters(purchasedFilaments);
+    let filtered = applyPurchasedFilters(purchasedFilaments.filter(p => (p.quantity_spools ?? p.quantitySpools ?? 0) > 0));
 
     if (filtered.length === 0) {
       const tr = document.createElement("tr");
@@ -5431,7 +4245,7 @@
       let pillHtml;
       if (isMultiColor) {
         // Rainbow gradient for multi-color packs
-        pillHtml = `<span class="pill-colored light-text" style="background: linear-gradient(135deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #8b5cf6);" title="${p.variant || "Multi-colore"}">${p.variant || "Multi-colore"}</span>`;
+        pillHtml = `<span class="pill-colored light-text" style="background: linear-gradient(135deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #8b5cf6);" title="${escapeHtml(p.variant || "Multi-colore")}">${escapeHtml(p.variant || "Multi-colore")}</span>`;
         tr.style.background = "linear-gradient(90deg, rgba(239,68,68,0.08), rgba(245,158,11,0.08), rgba(34,197,94,0.08), rgba(59,130,246,0.08), rgba(139,92,246,0.08))";
       } else {
         pillHtml = getColoredPillHtml(p.variant);
@@ -5443,16 +4257,16 @@
       }
 
       tr.innerHTML = `
-        <td>${p.order_date || "-"}</td>
-        <td>${canonicalizeBrand(p.brand) || "-"}</td>
-        <td>${p.material || "-"}</td>
+        <td>${escapeHtml(p.order_date || "-")}</td>
+        <td>${escapeHtml(canonicalizeBrand(p.brand) || "-")}</td>
+        <td>${escapeHtml(p.material || "-")}</td>
         <td>${pillHtml}</td>
-        <td>${p.color_code || "-"}</td>
+        <td>${escapeHtml(p.color_code || "-")}</td>
         <td>${packagingLabel}</td>
         <td>${qty}</td>
         <td>${priceDisplay}</td>
         <td style="white-space: nowrap;">
-          <button type="button" class="btn-action btn-success" data-purchased-id="${rowId}" title="Aggiungi al magazzino">
+          <button type="button" class="btn-action btn-success" data-purchased-id="${escapeHtml(rowId)}" title="Aggiungi al magazzino">
             <svg viewBox="0 0 24 24" fill="none" style="width:14px;height:14px;">
                   <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
                 </svg>
@@ -5478,7 +4292,7 @@
     let lowCount = 0;
 
     filaments.forEach((f) => {
-      totalSpools += f.spools_total || 0;
+      totalSpools += (f.sealed_spools || 0) + (f.open_spools || 0);
       totalWeight += f.total_weight_g || 0;
       totalRemaining += f.remaining_weight_g || 0;
       if (isLowStock(f)) lowCount++;
@@ -5537,48 +4351,20 @@
     // Raggruppa i filamenti per marca, materiale e variante
     const groupedMap = new Map(); // Map<"brand|material|variant", {brand, material, variant, totalSpools, totalWeight, remainingWeight}>
 
-    filaments.forEach((f) => {
-      // Calcola il peso residuo corretto per questo filamento
-      let remainingWeight = 0;
-      const unitWeight = f.unit_weight_g || 0;
-      
-      // Bobine sigillate = piene
-      remainingWeight += (f.sealed_spools || 0) * unitWeight;
-      
-      // Bobine aperte: usa l'array delle frazioni
-      if (f.open_spools_fractions && Array.isArray(f.open_spools_fractions)) {
-        f.open_spools_fractions.forEach(frac => {
-          remainingWeight += frac * unitWeight;
-        });
-      } else if (f.open_spools > 0) {
-        // Se non ci sono frazioni specifiche, usa la frazione principale o 1
-        remainingWeight += (f.open_spools || 0) * unitWeight * (f.main_fraction || 1);
-      }
-
-      // Usa il peso residuo calcolato invece di remaining_weight_g che potrebbe non essere aggiornato
-      const brand = canonicalizeBrand(f.brand || "");
-      const material = f.material || "";
-      const variant = f.variant || "";
-      const key = `${brand}|${material}|${variant}`;
-
-      if (!groupedMap.has(key)) {
-        groupedMap.set(key, {
-          brand: brand,
-          material: material,
-          variant: variant,
-          totalSpools: 0,
-          totalWeight: 0,
-          remainingWeight: 0
-        });
-      }
-
-      const group = groupedMap.get(key);
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      const totalWeight = totalSpools * unitWeight;
-      
-      group.totalSpools += totalSpools;
-      group.totalWeight += totalWeight;
-      group.remainingWeight += remainingWeight;
+    filaments.forEach(f => {
+      const normalized = JSON.parse(JSON.stringify(f));
+      recalcWeightsForFilament(normalized);
+      getActiveFilamentSpools(normalized).forEach(spool => {
+        const brand = canonicalizeBrand(f.brand || "");
+        const material = f.material || "";
+        const variant = spool.variant;
+        const key = JSON.stringify([brand, material, variant]);
+        if (!groupedMap.has(key)) groupedMap.set(key, { brand, material, variant, totalSpools: 0, totalWeight: 0, remainingWeight: 0 });
+        const group = groupedMap.get(key);
+        group.totalSpools++;
+        group.totalWeight += normalized.unit_weight_g;
+        group.remainingWeight += spool.fraction * normalized.unit_weight_g;
+      });
     });
 
     // Converti in array e filtra quelli con residuo > 0
@@ -5656,8 +4442,8 @@
       const pillHtml = getColoredPillHtml(group.variant);
 
       tr.innerHTML = `
-        <td>${group.brand || "-"}</td>
-        <td>${group.material || "-"}</td>
+        <td>${escapeHtml(group.brand || "-")}</td>
+        <td>${escapeHtml(group.material || "-")}</td>
         <td>${pillHtml}</td>
         <td style="text-align: center;">${formatNumber(group.remainingWeight, 0)}</td>
         <td style="text-align: center;">${formatNumber(group.totalSpools)}</td>
@@ -5670,106 +4456,36 @@
   function renderFinishedFilamentsTable() {
     const tbody = document.getElementById("finishedFilamentsTableBody");
     if (!tbody) return;
-
-    tbody.innerHTML = "";
-
-    // Filtra i filamenti terminati (residuo 0)
-    const finishedFilaments = filaments.filter((f) => {
-      const remainingWeight = f.remaining_weight_g || 0;
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      // Considera terminati quelli con residuo 0 O con bobine totali 0 e residuo 0
-      return remainingWeight === 0 || (totalSpools === 0 && remainingWeight === 0);
+    tbody.replaceChildren();
+    const grouped = new Map();
+    filaments.forEach(f => {
+      const count = f.finished_spools || 0;
+      if (!count) return;
+      const key = JSON.stringify([f.brand, f.material, f.variant, f.packaging_type]);
+      if (!grouped.has(key)) grouped.set(key, { brand: f.brand, material: f.material, variant: f.variant,
+        packaging: f.packaging_type || "spool", count: 0, weight: 0 });
+      const group = grouped.get(key);
+      group.count += count;
+      group.weight += count * f.unit_weight_g;
     });
-
-    if (finishedFilaments.length === 0) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = '<td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-muted);">Nessun filamento terminato</td>';
-      tbody.appendChild(tr);
-      return;
-    }
-
-    // Raggruppa per marca, materiale e variante
-    const groupedMap = new Map(); // Map<"brand|material|variant", {brand, material, variant, totalSpools, totalWeight, consumedWeight, packagingType}>
-
-    finishedFilaments.forEach((f) => {
-      const brand = canonicalizeBrand(f.brand || "");
-      const material = f.material || "";
-      const variant = f.variant || "";
-      const key = `${brand}|${material}|${variant}`;
-
-      if (!groupedMap.has(key)) {
-        groupedMap.set(key, {
-          brand: brand,
-          material: material,
-          variant: variant,
-          totalSpools: 0,
-          totalWeight: 0,
-          consumedWeight: 0,
-          packagingType: f.packaging_type || "spool"
-        });
-      }
-
-      const group = groupedMap.get(key);
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      const totalWeight = f.total_weight_g || 0;
-      const consumedWeight = f.used_weight_g || totalWeight; // Se used_weight_g non è disponibile, usa total_weight_g
-
-      group.totalSpools += totalSpools;
-      group.totalWeight += totalWeight;
-      group.consumedWeight += consumedWeight;
-    });
-
-    // Converti in array
-    let grouped = Array.from(groupedMap.values());
-
-    // Applica ordinamento
-    if (finishedFilamentsSortState.field) {
-      const field = finishedFilamentsSortState.field;
-      const dir = finishedFilamentsSortState.direction === "asc" ? 1 : -1;
-
-      grouped.sort((a, b) => {
-        let va = a[field];
-        let vb = b[field];
-        if (typeof va === "number" && typeof vb === "number") {
-          return (va - vb) * dir;
-        }
-        return String(va || "").localeCompare(String(vb || ""), "it", {
-          sensitivity: "base"
-        }) * dir;
-      });
-    }
-
-    // Aggiorna indicatori di ordinamento
-    const ths = document.querySelectorAll(
-      "#finishedFilamentsTable th[data-sort-field]"
-    );
-    ths.forEach((th) => {
+    const rows = Array.from(grouped.values());
+    const { field, direction } = finishedFilamentsSortState;
+    if (field) rows.sort((a, b) => String(a[field] || "").localeCompare(String(b[field] || ""), "it") * (direction === "asc" ? 1 : -1));
+    document.querySelectorAll("#finishedFilamentsTable th[data-sort-field]").forEach(th => {
       th.classList.remove("sorted-asc", "sorted-desc");
-      const field = th.getAttribute("data-sort-field");
-      if (field === finishedFilamentsSortState.field) {
-        th.classList.add(
-          finishedFilamentsSortState.direction === "asc"
-            ? "sorted-asc"
-            : "sorted-desc"
-        );
-      }
+      if (th.dataset.sortField === field) th.classList.add(direction === "asc" ? "sorted-asc" : "sorted-desc");
     });
-
-    // Renderizza le righe
-    grouped.forEach((group) => {
-      const tr = document.createElement("tr");
-      const pillHtml = getColoredPillHtml(group.variant);
-
-      tr.innerHTML = `
-        <td>${group.brand || "-"}</td>
-        <td>${group.material || "-"}</td>
-        <td>${pillHtml}</td>
-        <td style="text-align: center;">${formatNumber(group.totalSpools)}</td>
-        <td style="text-align: center;">${formatNumber(group.totalWeight, 0)}</td>
-        <td style="text-align: center;">${formatNumber(group.consumedWeight, 0)}</td>
-        <td style="text-align: center;">${group.packagingType || "-"}</td>
-      `;
-      tbody.appendChild(tr);
+    if (!rows.length) {
+      const row = document.createElement("tr"), cell = document.createElement("td");
+      cell.colSpan = 7; cell.textContent = "Nessuna bobina terminata"; row.appendChild(cell); tbody.appendChild(row);
+    }
+    rows.forEach(group => {
+      const row = document.createElement("tr");
+      [group.brand, group.material, group.variant, formatNumber(group.count), formatNumber(group.weight),
+        formatNumber(group.weight), group.packaging === "refill" ? "Ricarica" : "Bobina"].forEach(value => {
+        const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
+      });
+      tbody.appendChild(row);
     });
   }
 
@@ -5797,8 +4513,8 @@
       row.className = "bar-row";
 
       const ratio =
-        f.total_weight_g > 0
-          ? f.remaining_weight_g / f.total_weight_g
+        ((f.sealed_spools || 0) + (f.open_spools || 0)) * f.unit_weight_g > 0
+          ? f.remaining_weight_g / (((f.sealed_spools || 0) + (f.open_spools || 0)) * f.unit_weight_g)
           : 0;
       if (ratio <= 0.25) row.classList.add("low-stock");
       else if (ratio <= 0.5) row.classList.add("medium-stock");
@@ -5829,7 +4545,7 @@
       const header = document.createElement("div");
       header.className = "bar-row-header";
       const materialText = titleMaterial ? `${titleMaterial} – ` : "";
-      header.innerHTML = `<span>${titleBrand} – ${materialText}<span class="pill-colored ${textClass}" style="background:${colorHex};padding:0.15rem 0.5rem;font-size:0.8rem;">${titleVariant}</span></span><span>${detail}</span>`;
+      header.innerHTML = `<span>${escapeHtml(titleBrand)} – ${escapeHtml(materialText)}<span class="pill-colored ${textClass}" style="background:${colorHex};padding:0.15rem 0.5rem;font-size:0.8rem;">${escapeHtml(titleVariant)}</span></span><span>${detail}</span>`;
       row.appendChild(header);
 
       const barOuter = document.createElement("div");
@@ -5839,12 +4555,12 @@
       barInner.className = "bar-inner";
 
       const pct =
-        f.total_weight_g > 0
+        ((f.sealed_spools || 0) + (f.open_spools || 0)) * f.unit_weight_g > 0
           ? Math.max(
               5,
               Math.min(
                 100,
-                (f.remaining_weight_g / f.total_weight_g) * 100
+                (f.remaining_weight_g / (((f.sealed_spools || 0) + (f.open_spools || 0)) * f.unit_weight_g)) * 100
               )
             )
           : 0;
@@ -6041,7 +4757,7 @@
       locationTitle.style.cssText = "margin: 0; font-size: 0.75rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 0.3rem;";
       locationTitle.innerHTML = `
         ${locationInfo.icon}
-        <span>${location}</span>
+        <span>${escapeHtml(location)}</span>
       `;
       
       const locationDescription = document.createElement("div");
@@ -6311,8 +5027,8 @@
       const pillHtml = getColoredPillHtml(group.variant);
 
       tr.innerHTML = `
-        <td>${group.brand || "-"}</td>
-        <td>${group.material || "-"}</td>
+        <td>${escapeHtml(group.brand || "-")}</td>
+        <td>${escapeHtml(group.material || "-")}</td>
         <td>${pillHtml}</td>
         <td style="text-align: center; padding: 0.35rem 0.25rem;">${group.totalSpools}</td>
         <td style="text-align: center; padding: 0.35rem 0.25rem;">${formatNumber(group.totalWeight)}</td>
@@ -6501,893 +5217,214 @@
   }
 
   function applyConsumptionUpdate() {
-    const hiddenId = document.getElementById("consumptionFilamentId");
-    const sealedInput = document.getElementById(
-      "consumptionSealedInput"
-    );
-    const openInput = document.getElementById("consumptionOpenInput");
-    const fractionSelect = document.getElementById(
-      "consumptionFractionSelect"
-    );
-
-    const filamentId = hiddenId.value;
-    const f = filaments.find((x) => x.id === filamentId);
-    if (!f) {
-      showToast("Filamento non trovato.", "error");
-      return;
-    }
-
-    const newSealed = parseInt(sealedInput.value || "0", 10);
-    const newOpen = parseInt(openInput.value || "0", 10);
-    let fraction = parseFloat(fractionSelect.value || "1");
-    if (isNaN(fraction)) fraction = 1;
-
-    if (newSealed < 0 || newOpen < 0) {
-      showToast(
-        "I numeri di bobine nuove/aperti devono essere positivi.",
-        "error"
-      );
-      return;
-    }
-    if (newSealed + newOpen > f.spools_total) {
-      showToast(
-        "Nuove + aperte non possono superare le bobine totali.",
-        "error"
-      );
-      return;
-    }
-
-    // Gestione eliminazione bobine selezionate
-    const spoolsToDelete = f.spools_total - (newSealed + newOpen);
-    if (spoolsToDelete > 0) {
-      const selectedCheckboxes = document.querySelectorAll('input[name="spoolToDelete"]:checked');
-      if (selectedCheckboxes.length !== spoolsToDelete) {
-        showToast(
-          `Devi selezionare esattamente ${spoolsToDelete} bobina/e da eliminare.`,
-          "error"
-        );
-        return;
-      }
-
-      // Salva stato per undo
-      saveStateForUndo(`Eliminata/e ${spoolsToDelete} bobina/e: ${canonicalizeBrand(f.brand)} – ${f.material} – ${f.variant}`);
-
-      // Gestisci l'eliminazione delle bobine selezionate
-      const openSpoolsFractions = f.open_spools_fractions || [];
-      const newOpenSpoolsFractions = [];
-      
-      // Ordina le checkbox selezionate per tipo e indice
-      const selectedSpools = Array.from(selectedCheckboxes).map(cb => ({
-        type: cb.dataset.spoolType,
-        index: parseInt(cb.dataset.spoolIndex, 10)
-      })).sort((a, b) => {
-        if (a.type !== b.type) return a.type === "sealed" ? -1 : 1;
-        return a.index - b.index;
-      });
-
-      let sealedToKeep = f.sealed_spools || 0;
-      let openToKeep = f.open_spools || 0;
-      
-      // Conta quante bobine sigillate e aperte vengono eliminate
-      selectedSpools.forEach(spool => {
-        if (spool.type === "sealed") {
-          sealedToKeep--;
-        } else {
-          openToKeep--;
-        }
-      });
-
-      // Ricostruisci l'array delle frazioni delle bobine aperte rimanenti
-      if (f.open_spools > 0) {
-        for (let i = 0; i < f.open_spools; i++) {
-          const shouldDelete = selectedSpools.some(s => s.type === "open" && s.index === i);
-          if (!shouldDelete) {
-            newOpenSpoolsFractions.push(openSpoolsFractions[i] !== undefined ? openSpoolsFractions[i] : 1);
-          }
-        }
-      }
-
-      f.sealed_spools = sealedToKeep;
-      f.open_spools = openToKeep;
-      f.open_spools_fractions = newOpenSpoolsFractions;
-      f.spools_total = sealedToKeep + openToKeep;
-      f.main_fraction = openToKeep > 0 ? fraction : 1;
-    } else {
-      // Salva stato per undo se non c'è eliminazione
-      saveStateForUndo(`Aggiornato stato: ${canonicalizeBrand(f.brand)} – ${f.material} – ${f.variant}`);
-      
-      // Aggiorna normalmente
-    f.sealed_spools = newSealed;
-    f.open_spools = newOpen;
-      f.spools_total = newSealed + newOpen;
-    f.main_fraction = newOpen > 0 ? fraction : 1;
-    }
-
-    // Calcola grammi residui PRIMA dell'aggiornamento
-    const oldRemaining = f.remaining_weight_g || 0;
-
-    recalcWeightsForFilament(f);
-
-    // Calcola grammi residui DOPO l'aggiornamento
-    const newRemaining = f.remaining_weight_g || 0;
-    
-    // Se c'è stato un consumo (residuo diminuito), registralo
-    // MA SOLO se non stiamo eliminando bobine (l'eliminazione non è un consumo)
-    const consumed = oldRemaining - newRemaining;
-    if (consumed > 0 && spoolsToDelete === 0) {
-      // Solo se non ci sono bobine da eliminare, registra come consumo
-      addConsumptionEntry(f, consumed);
-    }
-
-    autoSave();
-    renderAll();
-    closeConsumptionModal();
-    showToast("Stato del filamento aggiornato.", "success");
+    try {
+      const value = id => document.getElementById(id)?.value ?? "";
+      const index = filaments.findIndex(f => f.id === value("consumptionFilamentId"));
+      if (index < 0) throw new Error("Filamento non trovato.");
+      const original = JSON.parse(JSON.stringify(filaments[index]));
+      recalcWeightsForFilament(original);
+      const sealed = requireSpoolNumber(value("consumptionSealedInput"), "Sigillate", true);
+      const open = requireSpoolNumber(value("consumptionOpenInput"), "Aperte", true);
+      const fraction = requireSpoolNumber(value("consumptionFractionSelect"), "Frazione");
+      if (fraction > 1 || sealed + open > original.sealed_spools + original.open_spools) throw new Error("Stato bobine non valido.");
+      const draft = JSON.parse(JSON.stringify(original));
+      const items = getActiveFilamentSpools(original);
+      draft.finished_spools += items.length - sealed - open;
+      const kept = items.slice(0, sealed + open).map((spool, i) => ({ ...spool, sealed: i < sealed,
+        fraction: i < sealed ? 1 : (i === sealed ? fraction : spool.fraction) }));
+      setActiveFilamentSpools(draft, kept);
+      recalcWeightsForFilament(draft);
+      const consumed = Math.max(0, original.remaining_weight_g - draft.remaining_weight_g);
+      const previousState = captureDomainState();
+      saveStateForUndo(`Aggiornato consumo: ${draft.brand} – ${draft.variant}`);
+      filaments[index] = draft;
+      if (consumed > 0) addConsumptionEntry(draft, consumed, { persist: false });
+      if (!commitDomainState(previousState)) return;
+      renderAll(); closeConsumptionModal();
+      showToast("Consumo aggiornato.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   }
 
   // --- Edit Filament Modal Functions ---
   function openEditFilamentModal(filamentId) {
-    console.log("openEditFilamentModal chiamato con ID:", filamentId);
-    const f = filaments.find((x) => x.id === filamentId);
-    if (!f) {
-      showToast("Filamento non trovato.", "error");
-      return;
+    const original = filaments.find(f => f.id === filamentId);
+    if (!original) return;
+    const draft = JSON.parse(JSON.stringify(original));
+    recalcWeightsForFilament(draft);
+    const session = { id: filamentId, original: JSON.parse(JSON.stringify(draft)), draft,
+      spools: getActiveFilamentSpools(draft), removed: [], explicitFinished: 0, initialFinished: draft.finished_spools };
+    const originalIds = new Set(session.spools.map(spool => spool.id));
+    let refreshSpoolRows = () => {};
+    const applyGlobalColor = value => {
+      const color = String(value || "").trim();
+      if (!color || color === "__custom__") return;
+      session.globalVariant = color;
+      session.spools.forEach(spool => { spool.variant = color; });
+      refreshSpoolRows();
+    };
+    window.filamentEditSession = session;
+    const input = id => document.getElementById(id);
+    const put = (id, value) => { const element = input(id); if (element) element.value = value; };
+    put("editFilamentId", filamentId);
+    put("editUnitWeightInput", draft.unit_weight_g);
+    put("editPackagingType", draft.packaging_type || "spool");
+    put("editPriceInput", draft.unit_price ?? "");
+    put("editColorCodeInput", draft.color_code || "");
+    put("editSupplierInput", draft.supplier || "");
+    put("editNotesInput", draft.notes || "");
+    put("editColorCustom", "");
+    const info = input("editFilamentInfo");
+    if (info) info.textContent = `${draft.brand} – ${draft.material} – ${draft.variant} · ${draft.finished_spools} bobine già terminate`;
+    ["editFinishedSpoolsLabel", "editSpoolFractionLabel", "editSpoolsLocationsList"].forEach(id => { if (input(id)) input(id).style.display = "none"; });
+    const globalLocationLabel = input("editLocationInput")?.closest("label");
+    if (globalLocationLabel) globalLocationLabel.style.display = "none";
+    const custom = input("editColorCustom");
+    if (custom) {
+      custom.style.display = "none";
+      custom.onchange = () => {
+        const value = custom.value.trim();
+        if (value) { session.customGlobalApplied = value; applyGlobalColor(value); }
+      };
     }
-    console.log("Filamento trovato:", {
-      id: f.id,
-      brand: f.brand,
-      material: f.material,
-      variant: f.variant,
-      sealed_spools: f.sealed_spools,
-      open_spools: f.open_spools,
-      spools_locations: f.spools_locations,
-      location: f.location
-    });
-
-    const modal = document.getElementById("editFilamentModal");
-    const overlay = document.getElementById("modalOverlay");
-    const infoEl = document.getElementById("editFilamentInfo");
-    const colorCustom = document.getElementById("editColorCustom");
-    const colorCodeInput = document.getElementById("editColorCodeInput");
-    const unitWeightInput = document.getElementById("editUnitWeightInput");
-    const packagingSelect = document.getElementById("editPackagingType");
-    const priceInput = document.getElementById("editPriceInput");
-    const supplierInput = document.getElementById("editSupplierInput");
-    const locationInput = document.getElementById("editLocationInput");
-    const hiddenId = document.getElementById("editFilamentId");
-    
-    // Nuovi campi bobine
-    const spoolsTotalInput = document.getElementById("editSpoolsTotal");
-    const spoolsSealedInput = document.getElementById("editSpoolsSealed");
-    const spoolsOpenInput = document.getElementById("editSpoolsOpen");
-    const spoolFractionSelect = document.getElementById("editSpoolFraction");
-    const finishedSpoolsInput = document.getElementById("editFinishedSpools");
-    const finishedSpoolsLabel = document.getElementById("editFinishedSpoolsLabel");
-    const spoolFractionLabel = document.getElementById("editSpoolFractionLabel");
-
-    if (infoEl) {
-      // Mostra informazioni più dettagliate per identificare il filamento specifico
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      const locations = f.spools_locations && Array.isArray(f.spools_locations) 
-        ? f.spools_locations.filter(loc => loc && loc.trim() !== "").join(", ")
-        : (f.location && f.location.trim() !== "" ? f.location : "");
-      const locationInfo = locations ? ` | Posizioni: ${locations}` : "";
-      infoEl.textContent = `${canonicalizeBrand(f.brand)} – ${f.material} – ${f.variant || "-"} | ID: ${f.id} | ${totalSpools} bobina${totalSpools !== 1 ? 'e' : 'a'}${locationInfo}`;
-    }
-
-    // Crea o aggiorna dropdown colore per edit modal
     window.editColorDropdown = createColorDropdown("editColorDropdownContainer", {
-      placeholder: "Seleziona colore...",
-      allowCustom: true,
-      customLabel: "Altro colore...",
-      initialValue: f.variant || "",
-      onSelect: (value) => {
-        const customInput = document.getElementById("editColorCustom");
-        if (value === "__custom__") {
-          customInput.style.display = "block";
-          customInput.focus();
-        } else {
-          customInput.style.display = "none";
-          customInput.value = "";
-        }
+      initialValue: draft.variant || "", allowCustom: true,
+      onSelect(value) {
+        if (custom) { custom.style.display = value === "__custom__" ? "block" : "none"; custom.value = ""; }
+        if (value !== "__custom__") applyGlobalColor(value);
         updateEditColorPreview();
       }
     });
 
-    // Se il colore attuale non è nella lista, mostra input custom e imposta il valore nel dropdown
-    const currentVariant = f.variant || "";
-    if (currentVariant && !colorList.includes(currentVariant)) {
-      if (colorCustom) {
-        colorCustom.value = currentVariant;
-        colorCustom.style.display = "block";
-      }
-      // Imposta anche il valore nel dropdown come custom per mantenere la coerenza
-      if (window.editColorDropdown) {
-        window.editColorDropdown.setValue("__custom__");
-      }
-    } else if (colorCustom) {
-      colorCustom.value = "";
-      colorCustom.style.display = "none";
-    }
-    
-    updateEditColorPreview();
-
-    // Mostra codice colore solo se non è già incluso nel nome variante
-    if (colorCodeInput) {
-      const variantHasCode = currentVariant && /\(\d{5}\)/.test(currentVariant);
-      colorCodeInput.value = variantHasCode ? "" : (f.color_code || "");
-    }
-    if (unitWeightInput) unitWeightInput.value = f.unit_weight_g || 1000;
-    if (packagingSelect) packagingSelect.value = f.packaging_type || "spool";
-    if (priceInput) priceInput.value = f.unit_price != null ? f.unit_price : "";
-    if (supplierInput) supplierInput.value = f.supplier || "";
-    // Mostra/nascondi il campo posizione globale in base al numero di bobine
-    const locationLabel = document.querySelector('label[for="editLocationInput"]') || 
-                          document.querySelector('label:has(#editLocationInput)') ||
-                          (locationInput ? locationInput.closest('label') : null);
-    
-    const notesInput = document.getElementById("editNotesInput");
-    if (notesInput) notesInput.value = f.notes || "";
-    if (hiddenId) hiddenId.value = filamentId;
-    
-    // Popola campi bobine
-    if (spoolsTotalInput) spoolsTotalInput.value = f.spools_total || 0;
-    if (spoolsSealedInput) spoolsSealedInput.value = f.sealed_spools || 0;
-    if (spoolsOpenInput) spoolsOpenInput.value = f.open_spools || 0;
-    
-    const sealedSpools = f.sealed_spools || 0;
-    const openSpools = f.open_spools || 0;
-    const totalSpools = sealedSpools + openSpools;
-    
-    // Nascondi il campo "Tipo confezionamento" se ci sono più bobine
-    const packagingLabel = packagingSelect ? packagingSelect.closest('label') : null;
-    if (packagingLabel) {
-      if (totalSpools > 1) {
-        packagingLabel.style.display = "none";
-      } else {
-        packagingLabel.style.display = "";
-      }
-    }
-    
-    // Nascondi sempre il campo posizione globale (si usa solo per bobina)
-    if (locationInput && locationLabel) {
-      locationLabel.style.display = "none";
-    }
-    
-    // Carica posizioni esistenti o crea array di default
-    // spools_locations è un array: [posizione_bobina_1, posizione_bobina_2, ...]
-    // Prima le sigillate, poi le aperte
-    let spoolsLocations = [];
-    
-    console.log("Caricamento posizioni - f.spools_locations:", f.spools_locations, "totalSpools:", totalSpools, "f.location:", f.location);
-    
-    // Se esiste un array di posizioni, preservalo e adattalo alla lunghezza corretta
-    if (f.spools_locations && Array.isArray(f.spools_locations)) {
-      // Copia l'array esistente preservando tutte le posizioni
-      spoolsLocations = [...f.spools_locations];
-      console.log("Posizioni copiate dall'array esistente:", spoolsLocations);
-      
-      // Se l'array è più corto del numero totale di bobine, aggiungi posizioni vuote o usa la posizione globale
-      if (spoolsLocations.length < totalSpools) {
-        const defaultLocation = f.location || "";
-        console.log("Array più corto, aggiungo posizioni default:", defaultLocation);
-        while (spoolsLocations.length < totalSpools) {
-          spoolsLocations.push(defaultLocation);
-        }
-      }
-      // Se l'array è più lungo, mantieni solo le prime totalSpools posizioni
-      else if (spoolsLocations.length > totalSpools) {
-        console.log("Array più lungo, taglio a", totalSpools, "posizioni");
-        spoolsLocations = spoolsLocations.slice(0, totalSpools);
-      }
-    } else {
-      // Se non esiste un array, crea uno nuovo usando la posizione globale come default
-      const defaultLocation = f.location || "";
-      console.log("Nessun array esistente, creo array con posizione default:", defaultLocation);
-      spoolsLocations = Array(totalSpools).fill(defaultLocation);
-    }
-    
-    console.log("Posizioni finali caricate:", spoolsLocations);
-    
-    // Carica varianti/colori esistenti o crea array di default
-    // spools_variants è un array: [colore_bobina_1, colore_bobina_2, ...]
-    // Prima le sigillate, poi le aperte
-    let spoolsVariants = f.spools_variants || [];
-    
-    // Se non esiste o ha lunghezza diversa, crea array di default
-    if (!Array.isArray(spoolsVariants) || spoolsVariants.length !== totalSpools) {
-      // Usa il colore principale come default per tutte le bobine
-      const defaultVariant = f.variant || "";
-      spoolsVariants = Array(totalSpools).fill(defaultVariant);
-    } else {
-      // Assicurati che tutte le bobine abbiano un colore (riempi con il colore principale se vuoto)
-      for (let i = 0; i < spoolsVariants.length; i++) {
-        if (!spoolsVariants[i] || spoolsVariants[i].trim() === "") {
-          spoolsVariants[i] = f.variant || "";
-        }
-      }
-    }
-    
-    // Gestione lista bobine sigillate individuali
-    const sealedSpoolsList = document.getElementById("editSealedSpoolsList");
-    const sealedSpoolsListContainer = document.getElementById("editSealedSpoolsListContainer");
-    
-    // Gestione lista bobine aperte individuali
-    const openSpoolsList = document.getElementById("editOpenSpoolsList");
-    const openSpoolsListContainer = document.getElementById("editOpenSpoolsListContainer");
-    
-    // Carica frazioni esistenti o crea array di default
-    // IMPORTANTE: crea una copia dell'array per non modificare l'originale
-    let openSpoolsFractions = Array.isArray(f.open_spools_fractions) 
-      ? [...f.open_spools_fractions] 
-      : [];
-    
-    console.log("Caricamento frazioni - f.open_spools_fractions:", f.open_spools_fractions, "openSpools:", openSpools, "remaining_weight_g:", f.remaining_weight_g, "total_weight_g:", f.total_weight_g);
-    
-    // Se l'array esiste ma ha lunghezza diversa, aggiungi o usa solo i valori necessari
-    if (openSpoolsFractions.length !== openSpools) {
-      if (openSpoolsFractions.length === 0 && openSpools > 0) {
-        // Se non esiste l'array, calcola la frazione basandosi sui grammi residui
-        const remainingWeight = f.remaining_weight_g || 0;
-        const totalWeight = f.total_weight_g || 0;
-        const unitWeight = f.unit_weight_g || 1000;
-        
-        // Se ci sono grammi residui, calcola la frazione media
-        if (remainingWeight > 0 && totalWeight > 0 && openSpools > 0) {
-          // Calcola la frazione totale (quanto rimane rispetto al totale)
-          const totalFraction = remainingWeight / totalWeight;
-          // Se c'è una sola bobina aperta, usa la frazione calcolata
-          if (openSpools === 1) {
-            openSpoolsFractions.push(Math.max(0, Math.min(1, totalFraction)));
-          } else {
-            // Se ci sono più bobine, distribuisci: una con la frazione calcolata, le altre piene
-            // Calcola quante bobine piene servono per raggiungere il peso totale
-            const fullSpoolsWeight = (openSpools - 1) * unitWeight;
-            const remainingForOne = remainingWeight - fullSpoolsWeight;
-            const fractionForOne = remainingForOne > 0 ? Math.max(0, Math.min(1, remainingForOne / unitWeight)) : 0;
-            openSpoolsFractions.push(fractionForOne);
-            for (let i = 1; i < openSpools; i++) {
-              openSpoolsFractions.push(1);
-            }
-          }
-        } else if (remainingWeight === 0 && openSpools > 0) {
-          // Se i grammi residui sono 0, tutte le bobine sono finite
-          openSpoolsFractions = Array(openSpools).fill(0);
-        } else {
-          // Prova la migrazione da vecchio sistema
-          if (f.main_fraction != null && f.finished_spools != null) {
-            const finished = f.finished_spools || 0;
-            const nonFinished = openSpools - finished;
-            // Aggiungi bobine finite (frazione 0)
-            for (let i = 0; i < finished; i++) {
-              openSpoolsFractions.push(0);
-            }
-            // Aggiungi bobine non finite: una con main_fraction, le altre piene
-            if (nonFinished > 0) {
-              openSpoolsFractions.push(f.main_fraction || 1);
-              for (let i = 1; i < nonFinished; i++) {
-                openSpoolsFractions.push(1);
-              }
-            }
-          } else {
-            // Array di default: tutte piene
-            openSpoolsFractions = Array(openSpools).fill(1);
-          }
-        }
-      } else if (openSpoolsFractions.length < openSpools) {
-        // Se l'array è più corto, aggiungi valori di default solo per le nuove bobine
-        while (openSpoolsFractions.length < openSpools) {
-          openSpoolsFractions.push(1);
-        }
-      }
-      // Se l'array è più lungo, useremo solo i primi openSpools elementi (non rimuoviamo)
-    } else if (openSpoolsFractions.length > 0) {
-      // Se l'array esiste e ha la lunghezza corretta, verifica che i valori siano coerenti con i grammi residui
-      const remainingWeight = f.remaining_weight_g || 0;
-      const totalWeight = f.total_weight_g || 0;
-      
-      // Se i grammi residui sono 0 ma ci sono frazioni > 0, potrebbe essere un errore
-      // In questo caso, mantieni i valori esistenti ma aggiungi un log
-      if (remainingWeight === 0) {
-        const hasNonZeroFractions = openSpoolsFractions.some(frac => frac > 0);
-        if (hasNonZeroFractions) {
-          console.warn("Attenzione: grammi residui 0 ma ci sono frazioni > 0. Mantenendo i valori esistenti.");
-        }
-      }
-    }
-    
-    console.log("Frazioni finali caricate:", openSpoolsFractions);
-    
-    // Funzione per renderizzare la lista delle bobine sigillate
-    function renderSealedSpoolsList() {
-      if (!sealedSpoolsListContainer) return;
-      
-      const currentSealed = parseInt(spoolsSealedInput?.value || "0", 10);
-      
-      if (currentSealed === 0) {
-        if (sealedSpoolsList) sealedSpoolsList.style.display = "none";
-        return;
-      }
-      
-      if (sealedSpoolsList) sealedSpoolsList.style.display = "block";
-      
-      // Assicurati che l'array delle posizioni abbia la lunghezza corretta
-      // IMPORTANTE: preserva le posizioni esistenti, aggiungi solo se necessario
-      const currentTotal = currentSealed + parseInt(spoolsOpenInput?.value || "0", 10);
-      const defaultLocation = f.location || "";
-      while (spoolsLocations.length < currentTotal) {
-        // Aggiungi posizioni vuote o usa la posizione globale come default
-        spoolsLocations.push(defaultLocation);
-      }
-      // Se l'array è più lungo, mantieni solo le prime currentTotal posizioni (preserva quelle esistenti)
-      if (spoolsLocations.length > currentTotal) {
-        spoolsLocations = spoolsLocations.slice(0, currentTotal);
-      }
-      
-      sealedSpoolsListContainer.innerHTML = "";
-      
-      for (let i = 0; i < currentSealed; i++) {
-        const spoolDiv = document.createElement("div");
-        spoolDiv.style.cssText = "display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem; background: var(--surface-soft); border-radius: 0.25rem;";
-        
-        const labelText = document.createElement("span");
-        labelText.style.cssText = "font-size: 0.8rem; font-weight: 500;";
-        labelText.textContent = `Bobina sigillata ${i + 1}`;
-        spoolDiv.appendChild(labelText);
-        
-        const controlsDiv = document.createElement("div");
-        controlsDiv.style.cssText = "display: flex; gap: 0.5rem;";
-        
-        // Select per posizione
-        const locationLabel = document.createElement("label");
-        locationLabel.style.cssText = "margin: 0; flex: 1; display: flex; flex-direction: column; gap: 0.25rem;";
-        const locationLabelText = document.createElement("span");
-        locationLabelText.style.cssText = "font-size: 0.75rem; color: var(--text-muted);";
-        locationLabelText.textContent = "Posizione:";
-        
-        const locationSelect = document.createElement("select");
-        locationSelect.style.cssText = "width: 100%;";
-        locationSelect.dataset.spoolIndex = i;
-        locationSelect.dataset.spoolType = "sealed";
-        
-        const currentLocation = spoolsLocations[i] || "";
-        console.log(`Bobina sigillata ${i + 1} - Posizione corrente:`, currentLocation);
-        
-        // Se la posizione esiste ma non è nella lista, aggiungila
-        if (currentLocation && currentLocation.trim() !== "") {
-          const trimmedLoc = currentLocation.trim();
-          const normalizedLoc = trimmedLoc.toLowerCase();
-          const existsInList = locationList.some(loc => loc.trim().toLowerCase() === normalizedLoc);
-          if (!existsInList) {
-            locationList.push(trimmedLoc);
-            saveLocationList();
-            console.log("Posizione aggiunta alla lista:", trimmedLoc);
-          }
-        }
-        
-        locationSelect.innerHTML = generateLocationOptions(currentLocation);
-        // Imposta anche il valore direttamente per assicurarsi che sia selezionato
-        if (currentLocation && currentLocation.trim() !== "") {
-          locationSelect.value = currentLocation.trim();
-        }
-        
-        locationSelect.addEventListener("change", () => {
-          const index = parseInt(locationSelect.dataset.spoolIndex, 10);
-          spoolsLocations[index] = locationSelect.value.trim();
-        });
-        
-        locationLabel.appendChild(locationLabelText);
-        locationLabel.appendChild(locationSelect);
-        controlsDiv.appendChild(locationLabel);
-        
-        // Select per colore
-        const colorLabel = document.createElement("label");
-        colorLabel.style.cssText = "margin: 0; flex: 1; display: flex; flex-direction: column; gap: 0.25rem;";
-        const colorLabelText = document.createElement("span");
-        colorLabelText.style.cssText = "font-size: 0.75rem; color: var(--text-muted);";
-        colorLabelText.textContent = "Colore:";
-        
-        const colorSelectContainer = document.createElement("div");
-        colorSelectContainer.id = `spool-color-sealed-${i}`;
-        colorSelectContainer.style.cssText = "width: 100%;";
-        colorSelectContainer.dataset.spoolIndex = i;
-        colorSelectContainer.dataset.spoolType = "sealed";
-        
-        colorLabel.appendChild(colorLabelText);
-        colorLabel.appendChild(colorSelectContainer);
-        
-        // Crea dropdown colore per questa bobina DOPO aver aggiunto il container al DOM
-        // Usa setTimeout per assicurarsi che l'elemento sia nel DOM
-        setTimeout(() => {
-          createColorDropdown(`spool-color-sealed-${i}`, {
-            initialValue: spoolsVariants[i] || f.variant || "",
-            brandHint: f.brand,
-            onSelect: (newColor) => {
-              const index = parseInt(colorSelectContainer.dataset.spoolIndex, 10);
-              spoolsVariants[index] = newColor || f.variant || "";
-            }
-          });
-        }, 0);
-        controlsDiv.appendChild(colorLabel);
-        
-        spoolDiv.appendChild(controlsDiv);
-        sealedSpoolsListContainer.appendChild(spoolDiv);
-      }
-    }
-    
-    // Funzione per renderizzare la lista delle bobine aperte
-    function renderOpenSpoolsList() {
-      if (!openSpoolsListContainer) return;
-      
-      const currentSealed = parseInt(spoolsSealedInput?.value || "0", 10);
-      const currentOpen = parseInt(spoolsOpenInput?.value || "0", 10);
-      
-      if (currentOpen === 0) {
-        if (openSpoolsList) openSpoolsList.style.display = "none";
-        return;
-      }
-      
-      if (openSpoolsList) openSpoolsList.style.display = "block";
-      
-      // Assicurati che l'array abbia la lunghezza corretta
-      // IMPORTANTE: mantieni i valori esistenti, aggiungi solo se necessario
-      while (openSpoolsFractions.length < currentOpen) {
-        openSpoolsFractions.push(1);
-      }
-      // Non rimuovere elementi se l'array è più lungo - potrebbe contenere dati importanti
-      // Invece, usa solo i primi currentOpen elementi
-      
-      // Assicurati che l'array delle posizioni abbia la lunghezza corretta
-      // IMPORTANTE: preserva le posizioni esistenti, aggiungi solo se necessario
-      const currentTotal = currentSealed + currentOpen;
-      const defaultLocation = f.location || "";
-      while (spoolsLocations.length < currentTotal) {
-        // Aggiungi posizioni vuote o usa la posizione globale come default
-        spoolsLocations.push(defaultLocation);
-      }
-      // Se l'array è più lungo, mantieni solo le prime currentTotal posizioni (preserva quelle esistenti)
-      if (spoolsLocations.length > currentTotal) {
-        spoolsLocations = spoolsLocations.slice(0, currentTotal);
-      }
-      
-      openSpoolsListContainer.innerHTML = "";
-      
-      for (let i = 0; i < currentOpen; i++) {
-        const spoolDiv = document.createElement("div");
-        spoolDiv.style.cssText = "display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem; background: var(--surface-soft); border-radius: 0.25rem;";
-        
-        const labelText = document.createElement("span");
-        labelText.style.cssText = "font-size: 0.8rem; font-weight: 500;";
-        labelText.textContent = `Bobina aperta ${i + 1}`;
-        spoolDiv.appendChild(labelText);
-        
-        const controlsDiv = document.createElement("div");
-        controlsDiv.style.cssText = "display: flex; gap: 0.5rem;";
-        
-        // Select per frazione
-        const fractionLabel = document.createElement("label");
-        fractionLabel.style.cssText = "margin: 0; flex: 1; display: flex; flex-direction: column; gap: 0.25rem;";
-        const fractionLabelText = document.createElement("span");
-        fractionLabelText.style.cssText = "font-size: 0.75rem; color: var(--text-muted);";
-        fractionLabelText.textContent = "Frazione:";
-        
-        const fractionSelect = document.createElement("select");
-        fractionSelect.style.cssText = "width: 100%;";
-        fractionSelect.dataset.spoolIndex = i;
-        fractionSelect.dataset.fieldType = "fraction";
-        
-        const fractionOptions = [
-          { value: "1", text: "Piena (100%)" },
-          { value: "0.9", text: "Quasi piena (~90%)" },
-          { value: "0.75", text: "Tre quarti (~75%)" },
-          { value: "0.5", text: "Metà (~50%)" },
-          { value: "0.25", text: "Un quarto (~25%)" },
-          { value: "0.1", text: "Quasi vuota (~10%)" },
-          { value: "0", text: "Finita (0%)" }
-        ];
-        
-        fractionOptions.forEach(opt => {
-          const option = document.createElement("option");
-          option.value = opt.value;
-          option.textContent = opt.text;
-          fractionSelect.appendChild(option);
-        });
-        
-        // Imposta il valore della frazione esistente
-        // Usa il valore dall'array se disponibile, altrimenti calcola dalla frazione residua
-        let currentFraction = 1;
-        if (i < openSpoolsFractions.length && openSpoolsFractions[i] !== undefined && openSpoolsFractions[i] !== null) {
-          currentFraction = openSpoolsFractions[i];
-        } else if (f.remaining_weight_g > 0 && f.total_weight_g > 0 && openSpools === 1) {
-          // Se c'è una sola bobina aperta e i dati sono mancanti, calcola dalla frazione residua
-          currentFraction = Math.max(0, Math.min(1, f.remaining_weight_g / f.total_weight_g));
-        } else if (f.remaining_weight_g === 0) {
-          // Se i grammi residui sono 0, la frazione è 0
-          currentFraction = 0;
-        }
-        
-        console.log(`Bobina aperta ${i + 1} - Frazione corrente:`, currentFraction, "da array:", openSpoolsFractions[i], "remaining_weight_g:", f.remaining_weight_g, "total_weight_g:", f.total_weight_g);
-        
-        // Converti in stringa e trova l'opzione corrispondente
-        const fractionStr = String(currentFraction);
-        const exactMatch = fractionSelect.querySelector(`option[value="${fractionStr}"]`);
-        
-        if (exactMatch) {
-          // Valore esatto trovato, impostalo
-          fractionSelect.value = fractionStr;
-        } else {
-          // Se non c'è corrispondenza esatta, trova l'opzione più vicina
-          const fractionNum = parseFloat(currentFraction);
-          let closestValue = "1";
-          let closestDiff = Math.abs(fractionNum - 1);
-          
-          fractionOptions.forEach(opt => {
-            const optValue = parseFloat(opt.value);
-            const diff = Math.abs(fractionNum - optValue);
-            if (diff < closestDiff) {
-              closestDiff = diff;
-              closestValue = opt.value;
-            }
-          });
-          
-          fractionSelect.value = closestValue;
-          // Aggiorna anche l'array con il valore selezionato per coerenza
-          if (i < openSpoolsFractions.length) {
-            openSpoolsFractions[i] = parseFloat(closestValue);
-          } else {
-            openSpoolsFractions.push(parseFloat(closestValue));
-          }
-        }
-        
-        fractionSelect.addEventListener("change", () => {
-          const index = parseInt(fractionSelect.dataset.spoolIndex, 10);
-          const newFraction = parseFloat(fractionSelect.value);
-          
-          // Se la frazione è 0, rimuovi la bobina
-          if (newFraction === 0) {
-            const currentSealed = parseInt(spoolsSealedInput?.value || "0", 10);
-            const currentOpen = parseInt(spoolsOpenInput?.value || "0", 10);
-            
-            // Rimuovi la frazione dall'array
-            openSpoolsFractions.splice(index, 1);
-            
-            // Rimuovi la posizione corrispondente (l'indice nella lista totale è currentSealed + index)
-            const locationIndex = currentSealed + index;
-            if (locationIndex < spoolsLocations.length) {
-              spoolsLocations.splice(locationIndex, 1);
-            }
-            
-            // Rimuovi il colore corrispondente
-            if (locationIndex < spoolsVariants.length) {
-              spoolsVariants.splice(locationIndex, 1);
-            }
-            
-            // Decrementa il numero di bobine aperte
-            const newOpen = Math.max(0, currentOpen - 1);
-            if (spoolsOpenInput) {
-              spoolsOpenInput.value = newOpen;
-            }
-            
-            // Decrementa il numero totale di bobine
-            const currentTotal = parseInt(spoolsTotalInput?.value || "0", 10);
-            const newTotal = Math.max(0, currentTotal - 1);
-            if (spoolsTotalInput) {
-              spoolsTotalInput.value = newTotal;
-            }
-            
-            // Mostra notifica
-            showToast(`Bobina finita rimossa dal conteggio`, "success");
-            
-            // Rigenera la lista delle bobine aperte
-            renderOpenSpoolsList();
-            updateEditRemainingGrams();
-          } else {
-            // Aggiorna normalmente la frazione
-            openSpoolsFractions[index] = newFraction;
-            updateEditRemainingGrams();
-          }
-        });
-        
-        fractionLabel.appendChild(fractionLabelText);
-        fractionLabel.appendChild(fractionSelect);
-        controlsDiv.appendChild(fractionLabel);
-        
-        // Select per posizione
-        const locationLabel = document.createElement("label");
-        locationLabel.style.cssText = "margin: 0; flex: 1; display: flex; flex-direction: column; gap: 0.25rem;";
-        const locationLabelText = document.createElement("span");
-        locationLabelText.style.cssText = "font-size: 0.75rem; color: var(--text-muted);";
-        locationLabelText.textContent = "Posizione:";
-        
-        const locationSelect = document.createElement("select");
-        locationSelect.style.cssText = "width: 100%;";
-        locationSelect.dataset.spoolIndex = i;
-        locationSelect.dataset.spoolType = "open";
-        locationSelect.dataset.fieldType = "location";
-        
-        // L'indice nella lista delle posizioni è currentSealed + i (prima le sigillate, poi le aperte)
-        const locationIndex = currentSealed + i;
-        const currentLocation = spoolsLocations[locationIndex] || "";
-        console.log(`Bobina aperta ${i + 1} - Indice posizione: ${locationIndex}, Posizione corrente:`, currentLocation);
-        
-        // Se la posizione esiste ma non è nella lista, aggiungila
-        if (currentLocation && currentLocation.trim() !== "") {
-          const trimmedLoc = currentLocation.trim();
-          const normalizedLoc = trimmedLoc.toLowerCase();
-          const existsInList = locationList.some(loc => loc.trim().toLowerCase() === normalizedLoc);
-          if (!existsInList) {
-            locationList.push(trimmedLoc);
-            saveLocationList();
-            console.log("Posizione aggiunta alla lista:", trimmedLoc);
-          }
-        }
-        
-        locationSelect.innerHTML = generateLocationOptions(currentLocation);
-        // Imposta anche il valore direttamente per assicurarsi che sia selezionato
-        if (currentLocation && currentLocation.trim() !== "") {
-          locationSelect.value = currentLocation.trim();
-        }
-        
-        locationSelect.addEventListener("change", () => {
-          const index = parseInt(locationSelect.dataset.spoolIndex, 10);
-          spoolsLocations[currentSealed + index] = locationSelect.value.trim();
-        });
-        
-        locationLabel.appendChild(locationLabelText);
-        locationLabel.appendChild(locationSelect);
-        controlsDiv.appendChild(locationLabel);
-        
-        // Select per colore
-        const colorLabel = document.createElement("label");
-        colorLabel.style.cssText = "margin: 0; flex: 1; display: flex; flex-direction: column; gap: 0.25rem;";
-        const colorLabelText = document.createElement("span");
-        colorLabelText.style.cssText = "font-size: 0.75rem; color: var(--text-muted);";
-        colorLabelText.textContent = "Colore:";
-        
-        const colorSelectContainer = document.createElement("div");
-        colorSelectContainer.id = `spool-color-open-${i}`;
-        colorSelectContainer.style.cssText = "width: 100%;";
-        colorSelectContainer.dataset.spoolIndex = i;
-        colorSelectContainer.dataset.spoolType = "open";
-        
-        // L'indice nella lista delle varianti è currentSealed + i (prima le sigillate, poi le aperte)
-        const spoolVariantIndex = currentSealed + i;
-        const currentSpoolVariant = spoolsVariants[spoolVariantIndex] || f.variant || "";
-        
-        colorLabel.appendChild(colorLabelText);
-        colorLabel.appendChild(colorSelectContainer);
-        
-        // Crea dropdown colore per questa bobina DOPO aver aggiunto il container al DOM
-        // Usa setTimeout per assicurarsi che l'elemento sia nel DOM
-        setTimeout(() => {
-          createColorDropdown(`spool-color-open-${i}`, {
-            initialValue: currentSpoolVariant,
-            brandHint: f.brand,
-            onSelect: (newColor) => {
-              const index = parseInt(colorSelectContainer.dataset.spoolIndex, 10);
-              spoolsVariants[currentSealed + index] = newColor || f.variant || "";
-            }
-          });
-        }, 0);
-        controlsDiv.appendChild(colorLabel);
-        
-        spoolDiv.appendChild(controlsDiv);
-        openSpoolsListContainer.appendChild(spoolDiv);
-      }
-    }
-    
-    // Renderizza le liste iniziali
-    // Mostra/nascondi la sezione posizioni individuali in base al numero di bobine
-    const spoolsLocationsList = document.getElementById("editSpoolsLocationsList");
-    if (spoolsLocationsList) {
-      if (totalSpools > 1) {
-        spoolsLocationsList.style.display = "block";
-      } else {
-        spoolsLocationsList.style.display = "none";
-      }
-    }
-    
-    renderSealedSpoolsList();
-    renderOpenSpoolsList();
-    
-    // Listener per aggiornare le liste quando cambiano i numeri di bobine
-    const updateSpoolsLists = () => {
-      renderSealedSpoolsList();
-      renderOpenSpoolsList();
+    const syncBuffer = () => {
+      const sealed = session.spools.filter(spool => spool.sealed);
+      const open = session.spools.filter(spool => !spool.sealed);
+      session.spools = [...sealed, ...open];
+      window.currentOpenSpoolsFractions = open.map(spool => spool.fraction);
+      window.currentSpoolsLocations = session.spools.map(spool => spool.location);
+      window.currentSpoolsVariants = session.spools.map(spool => spool.variant);
+      put("editSpoolsSealed", sealed.length);
+      put("editSpoolsOpen", open.length);
+      put("editSpoolsTotal", session.spools.length);
       updateEditRemainingGrams();
-      
-      // Mostra/nascondi il campo "Tipo confezionamento" in base al numero di bobine
-      const currentSealed = parseInt(spoolsSealedInput?.value || "0", 10);
-      const currentOpen = parseInt(spoolsOpenInput?.value || "0", 10);
-      const currentTotal = currentSealed + currentOpen;
-      
-      if (packagingLabel) {
-        if (currentTotal > 1) {
-          packagingLabel.style.display = "none";
-        } else {
-          packagingLabel.style.display = "";
-        }
-      }
     };
-    
-    if (spoolsSealedInput) {
-      spoolsSealedInput.removeEventListener("input", updateSpoolsLists);
-      spoolsSealedInput.removeEventListener("change", updateSpoolsLists);
-      spoolsSealedInput.addEventListener("input", updateSpoolsLists);
-      spoolsSealedInput.addEventListener("change", updateSpoolsLists);
-    }
-    
-    if (spoolsOpenInput) {
-      spoolsOpenInput.removeEventListener("input", updateSpoolsLists);
-      spoolsOpenInput.removeEventListener("change", updateSpoolsLists);
-      spoolsOpenInput.addEventListener("input", updateSpoolsLists);
-      spoolsOpenInput.addEventListener("change", updateSpoolsLists);
-    }
-    
-    // Nascondi i vecchi campi (finished_spools e main_fraction)
-    if (finishedSpoolsLabel) finishedSpoolsLabel.style.display = "none";
-    if (spoolFractionLabel) spoolFractionLabel.style.display = "none";
-    
-    // Salva gli array in variabili globali per poterli usare in applyEditFilament
-    window.currentOpenSpoolsFractions = openSpoolsFractions;
-    window.currentSpoolsLocations = spoolsLocations;
-    window.currentSpoolsVariants = spoolsVariants;
-    
-    updateEditRemainingGrams();
 
+    const renderSpools = () => {
+      syncBuffer();
+      [true, false].forEach(isSealed => {
+        const container = input(isSealed ? "editSealedSpoolsListContainer" : "editOpenSpoolsListContainer");
+        const section = input(isSealed ? "editSealedSpoolsList" : "editOpenSpoolsList");
+        const items = session.spools.filter(spool => spool.sealed === isSealed);
+        if (section) section.style.display = items.length ? "block" : "none";
+        if (!container) return;
+        container.replaceChildren();
+        items.forEach((spool, index) => {
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;flex-wrap:wrap;gap:.5rem;padding:.5rem;background:var(--surface-soft);border-radius:.25rem";
+          row.dataset.spoolId = spool.id;
+          const title = document.createElement("span");
+          title.textContent = `Bobina ${isSealed ? "sigillata" : "aperta"} ${index + 1}`;
+          title.style.width = "100%";
+          row.appendChild(title);
+          const makeLabel = text => {
+            const label = document.createElement("label");
+            label.style.cssText = "flex:1;min-width:130px;margin:0";
+            const caption = document.createElement("span"); caption.textContent = text;
+            label.appendChild(caption); row.appendChild(label); return label;
+          };
+          if (!isSealed) {
+            const fraction = document.createElement("select");
+            fraction.dataset.fieldType = "fraction";
+            fraction.dataset.spoolId = spool.id;
+            const values = [...new Set([1, .9, .75, .5, .25, .1, 0, spool.fraction])].sort((a, b) => b - a);
+            values.forEach(value => {
+              const option = document.createElement("option"); option.value = String(value);
+              option.textContent = value === 0 ? "Finita (0%)" : `${Math.round(value * 10000) / 100}%`;
+              fraction.appendChild(option);
+            });
+            fraction.value = String(spool.fraction);
+            fraction.addEventListener("change", () => {
+              const value = Number(fraction.value);
+              if (value === 0) {
+                session.spools = session.spools.filter(item => item.id !== spool.id);
+                if (originalIds.has(spool.id)) session.explicitFinished++;
+                renderSpools();
+              } else { spool.fraction = value; syncBuffer(); }
+            });
+            makeLabel("Residuo").appendChild(fraction);
+          }
+          const location = document.createElement("select");
+          location.dataset.fieldType = "location";
+          [...new Set(["", ...locationList, spool.location])].forEach(value => {
+            const option = document.createElement("option"); option.value = value;
+            option.textContent = value || "Nessuna posizione"; location.appendChild(option);
+          });
+          location.value = spool.location;
+          location.addEventListener("change", () => { spool.location = location.value; syncBuffer(); });
+          makeLabel("Posizione").appendChild(location);
+          const colorContainer = document.createElement("div");
+          colorContainer.id = `edit-spool-color-${spool.id}`;
+          makeLabel("Colore").appendChild(colorContainer);
+          container.appendChild(row);
+          let colorControl;
+          colorControl = createColorDropdown(colorContainer.id, { initialValue: spool.variant, brandHint: draft.brand,
+            onSelect(value) {
+              const previous = spool.variant;
+              let color = value;
+              if (value === "__custom__") color = prompt("Colore della bobina:", previous);
+              if (color === null || !String(color || "").trim() || color === "__custom__") {
+                colorControl?.setValue(previous);
+                return;
+              }
+              spool.variant = String(color).trim();
+              colorControl?.setValue(spool.variant);
+              syncBuffer();
+            } });
+        });
+      });
+    };
+
+    const syncCounts = () => {
+      const sealedCount = requireSpoolNumber(input("editSpoolsSealed").value, "Bobine sigillate", true);
+      const openCount = requireSpoolNumber(input("editSpoolsOpen").value, "Bobine aperte", true);
+      if (sealedCount + openCount > 10000) throw new Error("Quantità troppo elevata per la modifica individuale.");
+      const sealed = session.spools.filter(spool => spool.sealed).slice(0, sealedCount);
+      const open = session.spools.filter(spool => !spool.sealed).slice(0, openCount);
+      const reserved = new Set([...sealed, ...open].map(spool => spool.id));
+      const pool = [...session.spools.filter(spool => !reserved.has(spool.id)), ...session.removed];
+      const take = (list, count, isSealed) => {
+        while (list.length < count) {
+          let index = pool.findIndex(spool => spool.sealed === isSealed);
+          if (index < 0) index = pool.length ? 0 : -1;
+          const spool = index < 0 ? { id: createSpoolId(), fraction: 1, location: "", variant: draft.variant || "" } : pool.splice(index, 1)[0];
+          spool.sealed = isSealed;
+          if (isSealed) spool.fraction = 1;
+          list.push(spool);
+        }
+      };
+      take(sealed, sealedCount, true); take(open, openCount, false);
+      session.spools = [...sealed, ...open]; session.removed = pool;
+      renderSpools();
+    };
+    refreshSpoolRows = renderSpools;
+    session.syncCounts = syncCounts;
+    ["editSpoolsSealed", "editSpoolsOpen"].forEach(id => {
+      const element = input(id);
+      if (element) element.onchange = () => {
+        try { syncCounts(); } catch (error) { showToast(error.message, "error"); }
+      };
+    });
+    renderSpools();
+    updateEditColorPreview();
     openModalCentered("editFilamentModal");
   }
-  
+
   function updateEditRemainingGrams() {
-    const unitWeightInput = document.getElementById("editUnitWeightInput");
-    const spoolsSealedInput = document.getElementById("editSpoolsSealed");
-    const spoolsOpenInput = document.getElementById("editSpoolsOpen");
-    const spoolFractionSelect = document.getElementById("editSpoolFraction");
-    const finishedSpoolsInput = document.getElementById("editFinishedSpools");
-    const spoolsTotalInput = document.getElementById("editSpoolsTotal");
+    const unit = Number(document.getElementById("editUnitWeightInput")?.value);
+    const session = window.filamentEditSession;
     const remainingEl = document.getElementById("editRemainingGrams");
-    
-    const unitWeight = parseInt(unitWeightInput?.value) || 1000;
-    const sealed = parseInt(spoolsSealedInput?.value) || 0;
-    const open = parseInt(spoolsOpenInput?.value) || 0;
-    const finished = parseInt(finishedSpoolsInput?.value || "0", 10);
-    const fraction = parseFloat(spoolFractionSelect?.value || "1");
-    
-    // Se non ci sono bobine aperte, disabilita e resetta la frazione
-    if (spoolFractionSelect) {
-      if (open === 0) {
-        spoolFractionSelect.disabled = true;
-        spoolFractionSelect.value = "1"; // Resetta a 1 (piena) quando non ci sono bobine aperte
-      } else {
-        spoolFractionSelect.disabled = false;
-      }
-    }
-    
-    // Aggiorna totale
-    if (spoolsTotalInput) spoolsTotalInput.value = sealed + open;
-    
-    // Calcola grammi residui usando l'array delle frazioni
-    let remaining = 0;
-    
-    // Bobine sigillate = piene
-    if (sealed > 0) {
-      remaining += sealed * unitWeight;
-    }
-    
-    // Bobine aperte: usa l'array delle frazioni
-    if (open > 0 && window.currentOpenSpoolsFractions) {
-      const fractions = window.currentOpenSpoolsFractions;
-      for (let i = 0; i < Math.min(open, fractions.length); i++) {
-        const fraction = typeof fractions[i] === "number" ? fractions[i] : 1;
-        remaining += fraction * unitWeight;
-      }
-    }
-    
-    if (remainingEl) {
-      remainingEl.textContent = remaining.toLocaleString("it-IT", {
-        maximumFractionDigits: 0
-      });
-    }
+    if (!remainingEl || !session) return;
+    const remaining = session.spools.reduce((sum, spool) => sum + (spool.sealed ? 1 : spool.fraction), 0) * unit;
+    remainingEl.textContent = Number.isFinite(remaining) && remaining >= 0 ? formatNumber(remaining) : "—";
   }
 
   // Funzione rimossa - ora usiamo dropdown personalizzato
@@ -7415,966 +5452,402 @@
   }
 
   function closeEditFilamentModal() {
+    window.filamentEditSession = null;
+    window.currentOpenSpoolsFractions = null;
+    window.currentSpoolsLocations = null;
+    window.currentSpoolsVariants = null;
     closeModalCentered("editFilamentModal");
   }
 
   function applyEditFilament() {
     try {
-    const hiddenId = document.getElementById("editFilamentId");
-    const colorCustom = document.getElementById("editColorCustom");
-    const colorCodeInput = document.getElementById("editColorCodeInput");
-    const unitWeightInput = document.getElementById("editUnitWeightInput");
-    const packagingSelect = document.getElementById("editPackagingType");
-    const priceInput = document.getElementById("editPriceInput");
-    const supplierInput = document.getElementById("editSupplierInput");
-    const locationInput = document.getElementById("editLocationInput");
-    const notesInput = document.getElementById("editNotesInput");
-    
-    // Campi bobine
-    const spoolsSealedInput = document.getElementById("editSpoolsSealed");
-    const spoolsOpenInput = document.getElementById("editSpoolsOpen");
-    const spoolFractionSelect = document.getElementById("editSpoolFraction");
-    const finishedSpoolsInput = document.getElementById("editFinishedSpools");
-
-    const filamentId = hiddenId.value;
-    const f = filaments.find((x) => x.id === filamentId);
-    if (!f) {
-      showToast("Filamento non trovato.", "error");
-      return;
-    }
-
-    // Salva stato per undo
-    saveStateForUndo(`Modificato filamento: ${canonicalizeBrand(f.brand)} – ${f.material} – ${f.variant}`);
-
-    // Get color from dropdown personalizzato o custom input
-    let newVariant = "";
-    const dropdownValue = window.editColorDropdown ? window.editColorDropdown.getValue() : "";
-    
-    // Se l'input custom è visibile e ha un valore, usa quello (ha priorità)
-    if (colorCustom && colorCustom.style.display !== "none" && colorCustom.value.trim()) {
-      newVariant = colorCustom.value.trim();
-    }
-    // Altrimenti, se c'è un valore nel dropdown (e non è __custom__)
-    else if (dropdownValue && dropdownValue !== "__custom__" && dropdownValue.trim() !== "") {
-      newVariant = dropdownValue.trim();
-    }
-    // Se ancora non c'è un valore, mantieni il valore originale
-    else {
-      newVariant = f.variant || "";
-    }
-    
-    // Verifica che il colore non sia vuoto
-    if (!newVariant || newVariant.trim() === "") {
-      showToast("Il colore/variante è obbligatorio.", "error");
-      return;
-    }
-
-    const newColorCode = colorCodeInput ? colorCodeInput.value.trim() : "";
-    const newUnitWeight = parseInt(unitWeightInput ? unitWeightInput.value || "1000" : "1000", 10);
-    const newPackaging = packagingSelect ? packagingSelect.value || "spool" : "spool";
-    const newPrice = priceInput && priceInput.value ? parseFloat(priceInput.value) : null;
-    const newSupplier = supplierInput ? supplierInput.value.trim() : "";
-    // Non usare più il campo posizione globale, usa solo le posizioni individuali
-    const newNotes = notesInput ? notesInput.value.trim() : "";
-    
-    // Valori bobine
-    const newSealed = parseInt(spoolsSealedInput?.value || "0", 10);
-    const newOpen = parseInt(spoolsOpenInput?.value || "0", 10);
-
-    if (newUnitWeight <= 0) {
-      showToast("I grammi per bobina devono essere maggiori di 0.", "error");
-      return;
-    }
-
-    // Update filament properties
-    f.variant = newVariant;
-    f.color_code = newColorCode;
-    f.unit_weight_g = newUnitWeight;
-    f.packaging_type = newPackaging;
-    f.unit_price = newPrice;
-    f.supplier = newSupplier;
-    // f.location viene aggiornato automaticamente dalle posizioni individuali (vedi sotto)
-    f.notes = newNotes;
-    
-    // Update spool counts
-    f.sealed_spools = newSealed;
-    f.open_spools = newOpen;
-    f.spools_total = newSealed + newOpen;
-    
-    // Salva l'array delle frazioni delle bobine aperte
-    if (window.currentOpenSpoolsFractions && newOpen > 0) {
-      f.open_spools_fractions = window.currentOpenSpoolsFractions.slice(0, newOpen);
-      // Calcola main_fraction come la frazione più bassa (per retrocompatibilità)
-      f.main_fraction = Math.min(...f.open_spools_fractions);
-    } else {
-      f.open_spools_fractions = [];
-      f.main_fraction = 1;
-    }
-    
-    // Salva l'array delle posizioni per ogni bobina
-    if (window.currentSpoolsLocations) {
-      const totalSpools = newSealed + newOpen;
-      f.spools_locations = window.currentSpoolsLocations.slice(0, totalSpools);
-      
-      // Mantieni anche il campo location per retrocompatibilità (prima posizione non vuota o vuota)
-      const firstLocation = f.spools_locations.find(loc => loc && loc.trim() !== "") || "";
-      f.location = firstLocation;
-    } else {
-      // Se non ci sono posizioni individuali, mantieni quelle esistenti o crea array vuoto
-      if (!f.spools_locations || !Array.isArray(f.spools_locations)) {
-        f.spools_locations = Array(newSealed + newOpen).fill("");
+      const session = window.filamentEditSession;
+      if (!session) throw new Error("Riapri la finestra di modifica.");
+      const index = filaments.findIndex(f => f.id === session.id);
+      if (index < 0) throw new Error("Filamento non trovato.");
+      const value = id => document.getElementById(id)?.value ?? "";
+      const unit = requireSpoolNumber(value("editUnitWeightInput"), "Peso per bobina");
+      if (unit <= 0) throw new Error("Il peso per bobina deve essere maggiore di zero.");
+      const priceText = String(value("editPriceInput")).trim();
+      const price = priceText === "" ? null : requireSpoolNumber(priceText, "Prezzo");
+      session.syncCounts();
+      const draft = JSON.parse(JSON.stringify(session.draft));
+      const custom = document.getElementById("editColorCustom");
+      if (custom && custom.style.display !== "none") {
+        const color = custom.value.trim();
+        if (!color || color === "__custom__") throw new Error("Inserisci il colore personalizzato.");
+        if (session.customGlobalApplied !== color) {
+          session.spools.forEach(spool => { spool.variant = color; });
+          session.customGlobalApplied = color;
+        }
       }
-      // Mantieni la posizione esistente per retrocompatibilità
-      f.location = f.location || "";
-    }
-    
-    // Salva l'array delle varianti/colori per ogni bobina
-    if (window.currentSpoolsVariants) {
-      const totalSpools = newSealed + newOpen;
-      f.spools_variants = window.currentSpoolsVariants.slice(0, totalSpools);
-      
-      // Mantieni anche il campo variant principale per retrocompatibilità (prima variante o quella principale)
-      // Se tutte le bobine hanno lo stesso colore, usa quello, altrimenti usa il primo
-      const uniqueVariants = [...new Set(f.spools_variants.filter(v => v && v.trim() !== ""))];
-      if (uniqueVariants.length === 1) {
-        f.variant = uniqueVariants[0];
-      } else if (f.spools_variants.length > 0 && f.spools_variants[0]) {
-        f.variant = f.spools_variants[0];
-      }
-    } else {
-      // Se non ci sono varianti individuali, mantieni quelle esistenti o crea array con il colore principale
-      if (!f.spools_variants || !Array.isArray(f.spools_variants)) {
-        f.spools_variants = Array(newSealed + newOpen).fill(newVariant || f.variant || "");
-      }
-    }
-    
-    // Rimuovi i vecchi campi se esistono (migrazione)
-    if (f.finished_spools !== undefined) delete f.finished_spools;
-
-    // Recalculate weights
-    f.total_weight_g = f.spools_total * f.unit_weight_g;
-    recalcWeightsForFilament(f);
-
-    // Add new color to list if not present
-    if (newVariant && !colorList.includes(newVariant)) {
-      colorList.push(newVariant);
-      colorList = Array.from(new Set(colorList));
-      localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-    }
-
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
-    renderAll();
-    closeEditFilamentModal();
-    showToast("Filamento modificato con successo.", "success");
-    } catch (error) {
-      console.error("Errore nel salvataggio del filamento:", error);
-      showToast("Errore nel salvataggio: " + (error.message || "Errore sconosciuto"), "error");
-    }
+      draft.variant = session.spools[0]?.variant || session.globalVariant || draft.variant;
+      if (!draft.variant || !draft.variant.trim()) throw new Error("Il colore è obbligatorio.");
+      draft.color_code = value("editColorCodeInput").trim();
+      draft.unit_weight_g = unit;
+      draft.unit_price = price;
+      draft.packaging_type = value("editPackagingType") || "spool";
+      draft.supplier = value("editSupplierInput").trim();
+      draft.notes = value("editNotesInput").trim();
+      const originalIds = new Set(session.original.spools_ids);
+      const removedOriginalCount = session.removed.filter(spool => originalIds.has(spool.id)).length;
+      const addedCount = session.spools.filter(spool => !originalIds.has(spool.id)).length;
+      draft.finished_spools = session.initialFinished + session.explicitFinished + removedOriginalCount;
+      setActiveFilamentSpools(draft, session.spools);
+      draft.total_weight_g = unit === session.original.unit_weight_g
+        ? session.original.total_weight_g + addedCount * unit
+        : session.original.total_weight_g * unit / session.original.unit_weight_g + addedCount * unit;
+      recalcWeightsForFilament(draft);
+      const currentById = new Map(session.spools.map(spool => [spool.id, spool]));
+      const consumptions = new Map();
+      if (unit === session.original.unit_weight_g) getActiveFilamentSpools(session.original).forEach(previous => {
+        const current = currentById.get(previous.id);
+        const consumed = Math.max(0, previous.fraction - (current?.fraction ?? 0)) * unit;
+        if (consumed > 0) consumptions.set(previous.variant, (consumptions.get(previous.variant) || 0) + consumed);
+      });
+      const previousState = captureDomainState();
+      saveStateForUndo(`Modificato filamento: ${draft.brand} – ${draft.material} – ${draft.variant}`);
+      filaments[index] = draft;
+      draft.spools_variants.forEach(variant => { if (variant && !colorList.includes(variant)) colorList.push(variant); });
+      consumptions.forEach((grams, variant) => addConsumptionEntry({ ...draft, variant }, grams, { persist: false }));
+      if (!commitDomainState(previousState)) return;
+      renderAll();
+      closeEditFilamentModal();
+      showToast("Filamento modificato con successo.", "success");
+    } catch (error) { showToast(error.message || "Modifica non valida.", "error"); }
   }
 
   // --- Add Purchased Filament Manually ---
   function handleAddPurchasedFilament() {
-    const dateInput = document.getElementById("addPurchasedDate");
-    const brandSelect = document.getElementById("addPurchasedBrand");
-    const brandCustomInput = document.getElementById("addPurchasedBrandCustom");
-    const materialInput = document.getElementById("addPurchasedMaterial");
-    const variantInput = document.getElementById("addPurchasedVariant");
-    const colorCodeInput = document.getElementById("addPurchasedColorCode");
-    const packagingSelect = document.getElementById("addPurchasedPackaging");
-    const qtyInput = document.getElementById("addPurchasedQty");
-    const weightInput = document.getElementById("addPurchasedWeight");
-    const priceInput = document.getElementById("addPurchasedPrice");
-
-    let brand = brandSelect.value;
-    if (brand === "__custom__") {
-      brand = brandCustomInput.value.trim();
-    }
-    brand = canonicalizeBrand(brand);
-
-    const orderDate = dateInput.value || new Date().toISOString().slice(0, 10);
-    const material = materialInput.value.trim();
-    const variant = variantInput.value.trim();
-    const colorCode = colorCodeInput.value.trim();
-    const packaging = packagingSelect.value || "spool";
-    const qty = parseInt(qtyInput.value || "1", 10);
-    const unitWeight = parseInt(weightInput.value || "1000", 10);
-    const unitPrice = priceInput.value ? parseFloat(priceInput.value) : null;
-
-    if (!brand) {
-      showToast("Seleziona o inserisci una marca.", "error");
-      return;
-    }
-    if (!material) {
-      showToast("Inserisci un materiale.", "error");
-      return;
-    }
-    if (qty <= 0) {
-      showToast("La quantità deve essere almeno 1.", "error");
-      return;
-    }
-
-    const entry = {
-      id: `manual-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`,
-      order_number: "Manuale",
-      order_date: orderDate,
-      brand,
-      material,
-      variant,
-      color_code: colorCode,
-      packaging_type: packaging,
-      quantity_spools: qty,
-      unit_weight_g: unitWeight,
-      unit_price: unitPrice
-    };
-
-    purchasedFilaments.push(entry);
-
-    // Add to lists if new
-    if (brand && !brandList.includes(brand)) {
-      brandList.push(brand);
-      brandList = cleanBrandList(brandList);
-      localStorage.setItem(BRAND_LIST_KEY, JSON.stringify(brandList));
-      renderBrandOptions();
-    }
-    if (material && !materialList.includes(material)) {
-      materialList.push(material);
-      materialList = Array.from(new Set(materialList));
-      localStorage.setItem(MATERIAL_LIST_KEY, JSON.stringify(materialList));
-      renderMaterialOptions();
-    }
-    if (variant && !colorList.includes(variant)) {
-      colorList.push(variant);
-      colorList = Array.from(new Set(colorList));
-      localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-    }
-
-    autoSave();
-    renderPurchasedTable();
-    
-    // Reset form
-    dateInput.value = "";
-    brandSelect.value = "";
-    brandCustomInput.value = "";
-    brandCustomInput.style.display = "none";
-    materialInput.value = "";
-    variantInput.value = "";
-    colorCodeInput.value = "";
-    packagingSelect.value = "spool";
-    qtyInput.value = "1";
-    weightInput.value = "1000";
-    priceInput.value = "";
-
-    showToast("Filamento aggiunto ai comprati.", "success");
+    try {
+      const value = id => document.getElementById(id)?.value ?? "";
+      const brand = canonicalizeBrand(value("addPurchasedBrand") === "__custom__" ? value("addPurchasedBrandCustom").trim() : value("addPurchasedBrand"));
+      const material = canonicalizeMaterial(value("addPurchasedMaterial").trim());
+      if (!brand || !material) throw new Error("Marca e materiale sono obbligatori.");
+      const qty = requireSpoolNumber(value("addPurchasedQty"), "Quantità", true);
+      const unit = requireSpoolNumber(value("addPurchasedWeight"), "Peso per bobina");
+      if (!qty || !unit) throw new Error("Quantità e peso devono essere maggiori di zero.");
+      const priceText = value("addPurchasedPrice").trim();
+      const unitPrice = priceText === "" ? null : requireSpoolNumber(priceText, "Prezzo");
+      const now = new Date();
+      const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const entry = { id: createSpoolId(), order_number: "Manuale", order_date: value("addPurchasedDate") || localDate,
+        brand, material, variant: value("addPurchasedVariant").trim(), color_code: value("addPurchasedColorCode").trim(),
+        packaging_type: value("addPurchasedPackaging") || "spool", quantity_spools: qty, quantity_purchased_original: qty,
+        unit_weight_g: unit, unit_price: unitPrice };
+      const previous = captureDomainState();
+      saveStateForUndo(`Aggiunto acquisto: ${brand} – ${material}`);
+      purchasedFilaments.push(entry);
+      if (!brandList.includes(brand)) brandList.push(brand);
+      if (!materialList.includes(material)) materialList.push(material);
+      if (entry.variant && !colorList.includes(entry.variant)) colorList.push(entry.variant);
+      if (!commitDomainState(previous)) return;
+      renderBrandOptions(); renderMaterialOptions(); renderColorOptions(); renderAll();
+      ["addPurchasedDate", "addPurchasedBrand", "addPurchasedBrandCustom", "addPurchasedMaterial", "addPurchasedVariant",
+        "addPurchasedColorCode", "addPurchasedPrice"].forEach(id => { const input = document.getElementById(id); if (input) input.value = ""; });
+      document.getElementById("addPurchasedQty").value = "1";
+      document.getElementById("addPurchasedWeight").value = "1000";
+      document.getElementById("addPurchasedPackaging").value = "spool";
+      document.getElementById("addPurchasedBrandCustom").style.display = "none";
+      showToast("Acquisto aggiunto.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   }
 
-  function deleteFilament(filamentId) {
-    const f = filaments.find((x) => x.id === filamentId);
-    if (!f) return;
-    const ok = confirm(
-      `Vuoi davvero eliminare il filamento ${canonicalizeBrand(
-        f.brand
-      )} – ${f.material} – ${f.variant}?`
-    );
-    if (!ok) return;
+  function readSelectedSpoolIds(element) {
+    try {
+      const ids = JSON.parse(element.dataset.spoolIds || "[]");
+      return Array.isArray(ids) ? ids.filter(id => typeof id === "string") : [];
+    } catch (_) { return []; }
+  }
 
-    // Salva stato per undo
-    saveStateForUndo(`Eliminato filamento: ${canonicalizeBrand(f.brand)} – ${f.material} – ${f.variant}`);
-
-    filaments = filaments.filter((x) => x.id !== filamentId);
-    // Salvataggio con incremento versione (modifica significativa)
-    saveState(true);
+  function removeSelectedSpools(selections) {
+    const byFilament = new Map();
+    selections.forEach(({ filamentId, spoolIds }) => {
+      if (!byFilament.has(filamentId)) byFilament.set(filamentId, new Set());
+      spoolIds.forEach(id => byFilament.get(filamentId).add(id));
+    });
+    const affected = filaments.filter(f => byFilament.has(f.id)).map(f => ({
+      f, active: getActiveFilamentSpools(f), selected: byFilament.get(f.id)
+    }));
+    const count = affected.reduce((sum, item) => sum + item.active.filter(spool => item.selected.has(spool.id)).length, 0);
+    if (!count) { showToast("Nessuna bobina attiva selezionata.", "info"); return; }
+    if (!confirm(`Eliminare ${count} bobina/e selezionate? Il loro residuo verrà rimosso dall'inventario come rettifica; i consumi già registrati resteranno nello storico.`)) return;
+    if (!commitMutation(`Eliminate ${count} bobine selezionate`, () => {
+      affected.forEach(({ f, active, selected }) => {
+        const removedWeight = active.filter(spool => selected.has(spool.id))
+          .reduce((sum, spool) => sum + spool.fraction * f.unit_weight_g, 0);
+        setActiveFilamentSpools(f, active.filter(spool => !selected.has(spool.id)));
+        f.total_weight_g = Math.max(0, f.total_weight_g - removedWeight);
+        f.removed_weight_g = (f.removed_weight_g || 0) + removedWeight;
+        recalcWeightsForFilament(f);
+      });
+      // Conserva anche i record senza bobine attive: spiegano consumi e rettifiche passati.
+    })) return;
     renderAll();
-    showToast("Filamento eliminato.", "success");
+    const selectAll = document.getElementById("selectAllFilaments");
+    if (selectAll) selectAll.checked = false;
+    showToast(`${count} bobina/e eliminate.`, "success");
+  }
+
+  function deleteFilament(filamentId, spoolIds) {
+    const f = filaments.find(item => item.id === filamentId);
+    if (!f) return;
+    removeSelectedSpools([{ filamentId, spoolIds: spoolIds || getActiveFilamentSpools(f).map(spool => spool.id) }]);
   }
 
   function deleteSelectedFilaments() {
-    const checkboxes = document.querySelectorAll(
-      ".filament-select-checkbox:checked"
-    );
-    if (!checkboxes.length) {
-      showToast("Nessun filamento selezionato.", "error");
-      return;
-    }
+    const checkboxes = document.querySelectorAll(".filament-select-checkbox:checked");
+    removeSelectedSpools(Array.from(checkboxes).map(checkbox => ({
+      filamentId: checkbox.dataset.id, spoolIds: readSelectedSpoolIds(checkbox)
+    })));
+  }
 
-    const ids = Array.from(checkboxes).map((cb) =>
-      cb.getAttribute("data-id")
-    );
-
-    const count = ids.length;
-    const ok = confirm(
-      `Vuoi davvero eliminare ${count} filamento/i selezionati?`
-    );
-    if (!ok) return;
-
-    // Salva stato per undo
-    saveStateForUndo(`Eliminati ${count} filamento/i selezionati`);
-
-    filaments = filaments.filter((f) => !ids.includes(f.id));
-    autoSave();
-    renderAll();
-
-    const selectAll = document.getElementById("selectAllFilaments");
-    if (selectAll) selectAll.checked = false;
-
-    showToast("Filamenti selezionati eliminati.", "success");
+  function downloadJsonContent(content, filename) {
+    const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function exportJson() {
-    autoSave();
-    const raw = localStorage.getItem(STORAGE_KEY) || "{}";
-    const data = JSON.parse(raw);
-    
-    // Recupera prezzi mancanti dalle fatture importate (solo per l'export, non modifica i dati in memoria)
-    const filamentsWithPrices = (data.filaments || []).map(f => {
-      // Se ha già un prezzo, lascialo così
-      if (f.unit_price != null && f.unit_price > 0) {
-        return f;
-      }
-      
-      // Cerca un match nelle fatture importate
-      const fBrand = canonicalizeBrand(f.brand || "");
-      const fMaterial = canonicalizeMaterial(f.material || "");
-      const fVariant = (f.variant || "").trim();
-      const fColorCode = (f.color_code || "").trim();
-      
-      // Cerca in purchasedFilaments un match
-      const match = purchasedFilaments.find(p => {
-        const pBrand = canonicalizeBrand(p.brand || "");
-        const pMaterial = canonicalizeMaterial(p.material || "");
-        const pVariant = (p.variant || "").trim();
-        const pColorCode = (p.color_code || "").trim();
-        
-        // Match per brand, material, variant e color_code
-        const brandMatch = pBrand === fBrand;
-        const materialMatch = pMaterial === fMaterial;
-        const variantMatch = pVariant.toLowerCase() === fVariant.toLowerCase();
-        const colorCodeMatch = !fColorCode || !pColorCode || pColorCode === fColorCode;
-        
-        return brandMatch && materialMatch && variantMatch && colorCodeMatch && 
-               p.unit_price != null && p.unit_price > 0;
-      });
-      
-      // Se trovo un match con prezzo, aggiungilo al filamento nell'export
-      if (match && match.unit_price != null) {
-        return {
-          ...f,
-          unit_price: match.unit_price
-        };
-      }
-      
-      return f;
-    });
-    
-    // Aggiungi metadati export con identificatore tipo file
-    const exportData = {
-      ...data,
-      filaments: filamentsWithPrices, // Usa i filamenti con prezzi recuperati
-      file_type: "database_backup", // Identificatore per database completo
-      export_version: APP_VERSION,
-      export_date: new Date().toISOString(),
-      description: "Backup completo: magazzino disponibili + filamenti comprati"
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: "application/json;charset=utf-8"
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
     const date = new Date().toISOString().slice(0, 10);
-    // Estrai il numero di versione (es. "V.36" -> "36")
-    const versionNumber = APP_VERSION.replace(/[^0-9]/g, '');
-    // Nome file nel formato: registro_filamenti_YYYY-MM-DD_V[numero].json
-    a.download = `registro_filamenti_${date}_V${versionNumber}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast(
-      "Database completo esportato (magazzino disponibili + comprati).",
-      "success"
-    );
-  }
-
-  // Funzione per esportare solo le fatture importate
-  function exportInvoicesJson() {
-    if (!purchasedFilaments || purchasedFilaments.length === 0) {
-      showToast("Nessuna fattura importata da esportare.", "info");
+    if (!stateReady) {
+      const raw = lastKnownStorageRaw;
+      if (raw === null) return showToast("Nessun registro recuperabile da esportare.", "error");
+      downloadJsonContent(raw, `registro_filamenti_${date}_recupero.json`);
+      showToast("Esportata la copia originale da recuperare; i dati non sono stati alterati.", "info");
       return;
     }
+    try {
+      const data = validateStateCandidate(captureStateSnapshot(), false);
+      const exportData = {
+        ...data, file_type: "database_backup", export_version: INITIAL_VERSION,
+        export_date: new Date().toISOString(),
+        description: "Backup completo: inventario, acquisti, consumi, cataloghi, posizioni e impostazioni. Cronologia undo esclusa."
+      };
+      downloadJsonContent(JSON.stringify(exportData, null, 2), `registro_filamenti_${date}_${INITIAL_VERSION.replace(".", "")}.json`);
+      showToast("Backup dello stato corrente esportato, inclusi consumi e posizioni.", "success");
+    } catch (error) {
+      showToast("Esportazione non riuscita: " + error.message, "error");
+    }
+  }
 
-    // Raggruppa per ordine
-    const ordersMap = new Map();
+  function exportInvoicesJson() {
+    if (!purchasedFilaments.length) return showToast("Nessuna fattura importata da esportare.", "info");
+    const orders = new Map();
     purchasedFilaments.forEach(p => {
-      const orderNum = p.order_number || "unknown";
-      if (!ordersMap.has(orderNum)) {
-        ordersMap.set(orderNum, {
-          orderNumber: orderNum,
-          orderDate: p.order_date || "",
-          invoiceNumber: p.order_number || "",
-          invoiceDate: p.order_date || "",
-          items: []
-        });
-      }
-      const order = ordersMap.get(orderNum);
-      order.items.push({
-        brand: p.brand,
-        material: p.material,
-        variant: p.variant,
-        color_code: p.color_code,
-        sku: p.sku || "",
-        quantity: p.quantity_spools || 1,
-        qty: p.quantity_spools || 1,
-        quantity_spools: p.quantity_spools || 1,
-        unit_price: p.unit_price,
-        subtotal: (p.unit_price || 0) * (p.quantity_spools || 1),
-        packaging_type: p.packaging_type || "spool",
-        unit_weight_g: p.unit_weight_g
+      const orderNumber = p.order_number || "senza-numero-" + p.id;
+      if (!orders.has(orderNumber)) orders.set(orderNumber, { orderNumber, orderDate: p.order_date || "", items: [] });
+      const quantity = p.quantity_purchased_original ?? p.quantity_spools;
+      if (quantity <= 0) return;
+      orders.get(orderNumber).items.push({
+        id: p.id, brand: p.brand, material: p.material, variant: p.variant, color_code: p.color_code,
+        sku: p.sku || "", quantity_spools: quantity, unit_price: p.unit_price,
+        packaging_type: p.packaging_type || "spool", unit_weight_g: p.unit_weight_g
       });
     });
+    const payload = { file_type: "invoices_import", export_version: INITIAL_VERSION, export_date: new Date().toISOString(), orders: [...orders.values()].filter(order => order.items.length) };
+    downloadJsonContent(JSON.stringify(payload, null, 2), `fatture_filamenti_${new Date().toISOString().slice(0, 10)}_${INITIAL_VERSION.replace(".", "")}.json`);
+    showToast("Fatture esportate con quantità acquistate originali.", "success");
+  }
 
-    const orders = Array.from(ordersMap.values());
+  function refreshStateViews() {
+    renderBrandOptions();
+    renderMaterialOptions();
+    renderColorOptions();
+    populateFilterOptions();
+    renderAll();
+    renderConsumptionChart();
+    renderConsumptionHistory();
+    renderConsumptionStats();
+    updateHistoryUI();
+  }
 
-    const exportData = {
-      file_type: "invoices_import", // Identificatore per file fatture
-      export_version: APP_VERSION,
-      export_date: new Date().toISOString(),
-      description: "File fatture per importazione - contiene solo ordini/fatture",
-      orders: orders
-    };
+  function commitReplacementState(candidate, actionDescription, keepUndo = true) {
+    const previous = captureStateSnapshot(true);
+    const previousReady = stateReady;
+    const previousBlocked = storageWriteBlocked;
+    const previousReason = storageBlockReason;
+    const previousRaw = lastKnownStorageRaw;
+    const previousValid = lastKnownStorageValid;
+    const previousPayload = lastSavedPayload;
+    try {
+      const currentRaw = localStorage.getItem(STORAGE_KEY);
+      if (storageWriteBlocked || !stateReady) {
+        // Il ripristino esplicito conserva anche un eventuale originale danneggiato.
+        if (currentRaw !== null) localStorage.setItem(STORAGE_KEY + "_rejected", currentRaw);
+        lastKnownStorageRaw = currentRaw;
+        lastKnownStorageValid = false;
+      }
+      applyStateSnapshot(candidate, true);
+      undoStack = keepUndo && previousReady && !previousBlocked
+        ? [...previous.undoStack, { ...previous, undoStack: undefined, redoStack: undefined, actionDescription, timestamp: new Date().toISOString() }].slice(-MAX_UNDO_HISTORY)
+        : [];
+      redoStack = [];
+      stateReady = true;
+      storageWriteBlocked = false;
+      storageBlockReason = "";
+      lastSavedPayload = "";
+      if (!saveState()) throw new Error("Il nuovo stato non è stato salvato");
+      return true;
+    } catch (error) {
+      const conflict = storageWriteBlocked;
+      const conflictReason = storageBlockReason;
+      applyStateSnapshot(previous, true);
+      stateReady = previousReady;
+      storageWriteBlocked = previousBlocked || conflict;
+      storageBlockReason = conflictReason || previousReason;
+      lastKnownStorageRaw = previousRaw;
+      lastKnownStorageValid = previousValid;
+      lastSavedPayload = previousPayload;
+      reportStorageError("Ripristino non applicato: " + error.message, error);
+      return false;
+    }
+  }
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: "application/json;charset=utf-8"
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const date = new Date().toISOString().slice(0, 10);
-    // Estrai il numero di versione (es. "V.35" -> "35")
-    const versionNumber = APP_VERSION.replace(/[^0-9]/g, '');
-    // Nome file nel formato: fatture_filamenti_YYYY-MM-DD_V[numero].json
-    a.download = `fatture_filamenti_${date}_V${versionNumber}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast(
-      `File fatture esportato (${orders.length} ordini).`,
-      "success"
-    );
+  function buildInvoiceImportCandidate(data) {
+    requireRecord(data, "File fatture");
+    const orders = data.orders ?? data.invoices;
+    if (!Array.isArray(orders)) throw new Error("Elenco ordini mancante");
+    const candidate = captureStateSnapshot();
+    const existingOrders = new Set(candidate.purchasedFilaments.map(p => p.order_number).filter(Boolean));
+    const existingIds = new Set(candidate.purchasedFilaments.map(p => p.id));
+    let skipped = 0;
+    let added = 0;
+    for (const rawOrder of orders) {
+      const order = requireRecord(rawOrder, "Ordine");
+      const orderNumber = validateText(order.orderNumber ?? order.invoiceNumber ?? order.number, "Numero ordine");
+      if (orderNumber && existingOrders.has(orderNumber)) { skipped++; continue; }
+      const orderDate = validateText(order.orderDate ?? order.invoiceDate ?? order.date, "Data ordine");
+      const items = order.items ?? order.lines ?? order.products;
+      if (!Array.isArray(items)) throw new Error("Righe ordine mancanti o non valide");
+      for (const rawItem of items) {
+        const item = requireRecord(rawItem, "Riga fattura");
+        const qty = parseImportNumber(item.quantity_spools ?? item.quantitySpools ?? item.qty_spools ?? item.qty ?? item.quantity ?? 1, "Quantità fattura", { integer: true, min: 1 });
+        const sku = validateText(item.sku, "SKU");
+        const id = validateText(item.id, "ID fattura") || makeStableId("inv");
+        if (existingIds.has(id)) throw new Error("ID riga fattura già presente: " + id);
+        existingIds.add(id);
+        const variant = validateText(item.variant ?? item.color ?? item.bambuColorName, "Colore fattura");
+        let unitPrice = null;
+        const unitValue = item.unit_price ?? item.price_per_unit ?? item.price_eur ?? item.price;
+        const totalValue = item.total_price ?? item.subtotal ?? item.total;
+        // Compatibilità: price e price_eur sono sempre unitari; per un totale usare total_price/subtotal/total.
+        if (unitValue !== undefined && unitValue !== null) unitPrice = parseImportNumber(unitValue, "Prezzo unitario fattura");
+        else if (totalValue !== undefined && totalValue !== null) unitPrice = parseImportNumber(totalValue, "Totale riga fattura") / qty;
+        let packaging = validateText(item.packaging_type ?? item.form, "Formato bobina").toLowerCase();
+        if (!packaging) packaging = /SPLFREE|refill/i.test(sku + " " + variant) ? "refill" : "spool";
+        packaging = /refill|ricarica|senza bobina/.test(packaging) ? "refill" : "spool";
+        const skuWeight = sku.match(/-(\d+)-(?:SPL|SPLFREE)/i);
+        const unitWeight = parseImportNumber(item.unit_weight_g ?? item.weight_g_per_spool ?? item.weight_g ?? (skuWeight ? skuWeight[1] : null), "Peso fattura", { optional: true, min: Number.MIN_VALUE });
+        candidate.purchasedFilaments.push({
+          id, order_number: orderNumber, order_date: orderDate,
+          brand: canonicalizeBrand(validateText(item.brand ?? order.brand, "Marca fattura")),
+          material: canonicalizeMaterial(validateText(item.material, "Materiale fattura")),
+          variant, color_code: validateText(item.color_code ?? item.colorCode ?? item.bambuColorCode, "Codice colore"),
+          sku, packaging_type: packaging, quantity_spools: qty, quantity_purchased_original: qty,
+          unit_weight_g: unitWeight, unit_price: unitPrice
+        });
+        added++;
+      }
+      if (orderNumber) existingOrders.add(orderNumber);
+    }
+    return { candidate: validateStateCandidate(candidate), added, skipped };
+  }
+
+  function importJsonData(data) {
+    requireRecord(data, "JSON");
+    const isBackup = data.file_type === "database_backup" || (Array.isArray(data.filaments) && data.file_type !== "invoices_import");
+    if (isBackup) {
+      const candidate = validateStateCandidate(data);
+      const warning = storageWriteBlocked ? " Il registro locale è bloccato: verrà conservata una copia dell'originale." : "";
+      if (!window.confirm("Ripristinare questo backup sostituendo inventario, acquisti, consumi e impostazioni correnti?" + warning)) return false;
+      if (!commitReplacementState(candidate, "Ripristino backup")) return false;
+      pendingPurchasedTransfer = null;
+      currentSearch = "";
+      const search = document.getElementById("stockSearchInput");
+      if (search) search.value = "";
+      refreshStateViews();
+      const legacyInfo = data.schemaVersion === undefined ? " Il formato precedente non include eventuali consumi o impostazioni mancanti." : "";
+      showToast("Backup ripristinato: " + candidate.filaments.length + " filamenti e " + candidate.purchasedFilaments.length + " acquisti." + legacyInfo, "success");
+      return true;
+    }
+    if (data.file_type === "invoices_import" || Array.isArray(data.orders) || Array.isArray(data.invoices)) {
+      if (!stateReady || storageWriteBlocked) throw new Error("Prima di aggiungere fatture è necessario recuperare o ricaricare il registro");
+      const result = buildInvoiceImportCandidate(data);
+      if (!result.added) { showToast("Nessuna nuova riga fattura. Ordini già presenti: " + result.skipped, "info"); return true; }
+      if (!commitReplacementState(result.candidate, "Importazione fatture")) return false;
+      refreshStateViews();
+      showToast("Importate " + result.added + " righe fattura. Ordini già presenti saltati: " + result.skipped, "success");
+      return true;
+    }
+    throw new Error("JSON non riconosciuto: mancano filaments oppure orders/invoices");
   }
 
   function setupImportJson() {
-    console.log("setupImportJson chiamata");
     const input = document.getElementById("importJsonInput");
     const button = document.getElementById("importJsonButton");
-    
-    console.log("Input trovato:", !!input);
-    console.log("Button trovato:", !!button);
-    
-    if (!input) {
-      console.error("importJsonInput non trovato!");
-      return;
-    }
-    
-    // Collega il pulsante all'input file
-    if (button) {
-      console.log("Aggiungo event listener al pulsante import");
-      button.addEventListener("click", () => {
-        console.log("Pulsante import cliccato!");
-        input.click();
-      });
-    } else {
-      console.error("importJsonButton non trovato!");
-    }
-    
-    input.addEventListener("change", (event) => {
-      console.log("Evento change sull'input file");
+    if (!input) return;
+    if (button) button.addEventListener("click", () => input.click());
+    input.addEventListener("change", event => {
       const file = event.target.files[0];
-      if (!file) {
-        console.log("Nessun file selezionato");
-        return;
-      }
-      console.log("File selezionato:", file.name, "Dimensione:", file.size);
+      if (!file) return;
+      if (file.size > 20 * 1024 * 1024) { showToast("Il JSON supera 20 MB. Riduci il file prima di importarlo.", "error"); input.value = ""; return; }
       const reader = new FileReader();
-      reader.onerror = (error) => {
-        console.error("Errore lettura file:", error);
-        showToast("Errore durante la lettura del file.", "error");
-        input.value = ""; // Reset input
-      };
-      reader.onload = (e) => {
+      reader.onerror = () => { showToast("Impossibile leggere il file JSON.", "error"); input.value = ""; };
+      reader.onload = event => {
         try {
-          const text = e.target.result;
-          console.log("File letto. Inizio parsing JSON...");
-          const data = JSON.parse(text);
-          console.log("JSON parsato con successo.");
-          pendingPurchasedTransfer = null;
-
-          // Riconoscimento tipo file basato su file_type o struttura
-          const fileType = data.file_type;
-          const hasFilamentsArray = Array.isArray(data.filaments);
-          const hasOrdersArray =
-            Array.isArray(data.orders) || Array.isArray(data.invoices);
-
-          // Se ha file_type, usa quello per identificare il tipo
-          const isDatabaseBackup = fileType === "database_backup" || 
-            (hasFilamentsArray && fileType !== "invoices_import");
-          const isInvoicesFile = fileType === "invoices_import" || 
-            (hasOrdersArray && !hasFilamentsArray && fileType !== "database_backup");
-
-          if (isDatabaseBackup || (hasFilamentsArray && !isInvoicesFile)) {
-            // Import di un file database completo (backup/app)
-            console.log("Importazione database backup. Filamenti nel file:", data.filaments?.length || 0);
-            
-            if (!Array.isArray(data.filaments) || data.filaments.length === 0) {
-              showToast("Il file JSON non contiene filamenti validi. Verifica che il file sia corretto.", "error");
-              input.value = ""; // Reset input
-              return;
-            }
-            
-            const importedFilaments = (data.filaments || []).map((f) => ({
-              ...f,
-              brand: canonicalizeBrand(f.brand),
-              // Assicura che packaging_type e unit_price siano preservati
-              packaging_type: f.packaging_type || "spool",
-              unit_price: f.unit_price != null ? f.unit_price : null,
-              // Assicura che open_spools_fractions sia un array se presente
-              open_spools_fractions: Array.isArray(f.open_spools_fractions) ? f.open_spools_fractions : undefined
-            }));
-
-            // Recupera prezzi dai filamenti importati per aggiornare quelli esistenti
-            const existingFilamentsMap = new Map();
-            filaments.forEach(f => {
-              const key = `${canonicalizeBrand(f.brand || "")}||${canonicalizeMaterial(f.material || "")}||${(f.variant || "").trim().toLowerCase()}||${(f.color_code || "").trim()}`;
-              existingFilamentsMap.set(key, f);
-            });
-
-            // Aggiorna i prezzi dei filamenti esistenti con quelli importati
-            importedFilaments.forEach(imported => {
-              if (imported.unit_price != null && imported.unit_price > 0) {
-                const key = `${canonicalizeBrand(imported.brand || "")}||${canonicalizeMaterial(imported.material || "")}||${(imported.variant || "").trim().toLowerCase()}||${(imported.color_code || "").trim()}`;
-                const existing = existingFilamentsMap.get(key);
-                if (existing && (existing.unit_price == null || existing.unit_price === 0)) {
-                  existing.unit_price = imported.unit_price;
-                }
-              }
-            });
-
-            filaments = deduplicateFilamentsByIdentity(importedFilaments);
-            console.log("Filamenti dopo deduplicazione:", filaments.length);
-            
-            // Ricalcola i pesi per tutti i filamenti importati
-            filaments.forEach(f => {
-              recalcWeightsForFilament(f);
-            });
-            
-            console.log("Filamenti finali prima del salvataggio:", filaments.length);
-
-            if (data.brands) {
-              brandList = cleanBrandList(brandList.concat(data.brands || []));
-            }
-            if (data.materials) {
-              materialList = Array.from(
-                new Set(data.materials.concat(materialList))
-              );
-            }
-            if (data.colors) {
-              colorList = Array.from(new Set(data.colors.concat(colorList)));
-            }
-            // Preserva i purchasedFilaments esistenti e aggiungi quelli nuovi dal file
-            // Solo se il file ha purchasedFilaments con dati, altrimenti mantieni quelli esistenti
-            if (Array.isArray(data.purchasedFilaments) && data.purchasedFilaments.length > 0) {
-              // Merge: aggiungi i nuovi purchasFilaments a quelli esistenti, evitando duplicati per ID
-              const existingIds = new Set(purchasedFilaments.map(p => p.id).filter(Boolean));
-              const newPurchasedFromFile = data.purchasedFilaments
-                .map((p) => ({
-                ...p,
-                brand: canonicalizeBrand(p.brand)
-                }))
-                .filter(p => !p.id || !existingIds.has(p.id)); // Evita duplicati per ID
-              
-              purchasedFilaments = purchasedFilaments.concat(newPurchasedFromFile);
-            }
-            // Se il file non ha purchasedFilaments o è vuoto, mantieni quelli esistenti
-
-            localStorage.setItem(
-              BRAND_LIST_KEY,
-              JSON.stringify(brandList)
-            );
-            localStorage.setItem(
-              MATERIAL_LIST_KEY,
-              JSON.stringify(materialList)
-            );
-            localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-
-            // Salva lo stato immediatamente
-            const stateToSave = {
-              filaments,
-              brands: brandList,
-              materials: materialList,
-              colors: colorList,
-              purchasedFilaments
-            };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
-            localStorage.setItem(LOCATION_LIST_KEY, JSON.stringify(locationList));
-            
-            // Verifica che i filamenti siano stati salvati correttamente
-            const savedState = JSON.parse(localStorage.getItem(STORAGE_KEY));
-            console.log("Filamenti salvati in localStorage:", savedState?.filaments?.length || 0);
-            console.log("Filamenti in memoria (filaments array):", filaments.length);
-            
-            // NON ricaricare lo stato qui perché sovrascriverebbe i dati appena importati
-            // I dati sono già in memoria nelle variabili filaments e purchasedFilaments
-            
-            // Resetta i filtri per assicurarsi che i filamenti importati siano visibili
-            stockFilters = { brand: "", material: "", packaging: "" };
-            currentSearch = "";
-            const stockBrandFilter = document.getElementById("stockFilterBrand");
-            const stockMaterialFilter = document.getElementById("stockFilterMaterial");
-            const stockPackagingFilter = document.getElementById("stockFilterPackaging");
-            const searchInput = document.getElementById("stockSearchInput");
-            if (stockBrandFilter) stockBrandFilter.value = "";
-            if (stockMaterialFilter) stockMaterialFilter.value = "";
-            if (stockPackagingFilter) stockPackagingFilter.value = "";
-            if (searchInput) searchInput.value = "";
-            
-            // Aggiorna le liste prima del rendering
-            renderBrandOptions();
-            renderMaterialOptions();
-            renderColorOptions();
-            populateFilterOptions();
-            
-            // Forza il rendering immediato
-            console.log("=== INIZIO RENDERING ===");
-            console.log("Filamenti in memoria prima di renderAll:", filaments.length);
-            console.log("Filtri attivi:", stockFilters);
-            console.log("Ricerca attiva:", currentSearch);
-            
-            renderAll();
-            
-            // Verifica che i filamenti siano stati renderizzati
-            setTimeout(() => {
-              const tableBody = document.getElementById("filamentTableBody");
-              const rows = tableBody ? tableBody.querySelectorAll("tr").length : 0;
-              console.log("Righe renderizzate nella tabella:", rows);
-              console.log("Filamenti in memoria:", filaments.length);
-              
-              // Forza un secondo rendering per assicurarsi che tutto sia aggiornato
-              renderAll();
-              console.log("=== FINE RENDERING ===");
-            }, 200);
-            
-            const importedFilamentsCount = Array.isArray(data.filaments) ? data.filaments.length : 0;
-            const importedPurchasedCount = Array.isArray(data.purchasedFilaments) ? data.purchasedFilaments.length : 0;
-            const parts = [];
-            if (importedFilamentsCount > 0) {
-              parts.push(importedFilamentsCount + " filamenti disponibili");
-            }
-            if (importedPurchasedCount > 0) {
-              parts.push(importedPurchasedCount + " filamenti comprati");
-            }
-            const summaryText = parts.length
-              ? "Importati " + parts.join(" e ") + " dal JSON."
-              : "JSON importato: nessun filamento trovato.";
-            showToast(summaryText, "success");
-          } else if (isInvoicesFile || hasOrdersArray) {
-            // Import di un file fatture (ordini)
-            const orders = Array.isArray(data.orders)
-              ? data.orders
-              : data.invoices;
-
-            // Raccogli tutti gli orderNumber già presenti per evitare duplicati
-            const existingOrderNumbers = new Set(
-              purchasedFilaments
-                .map(p => p.order_number)
-                .filter(Boolean)
-            );
-
-            const newPurchased = [];
-            const skippedOrders = [];
-            const addedOrders = [];
-
-            orders.forEach((order, orderIndex) => {
-              const orderNumber =
-                order.orderNumber || order.invoiceNumber || order.number || "";
-              const orderDate =
-                order.orderDate || order.invoiceDate || order.date || "";
-              
-              // Controlla se questo ordine è già stato importato
-              if (orderNumber && existingOrderNumbers.has(orderNumber)) {
-                skippedOrders.push(orderNumber);
-                return; // Salta questo ordine
-              }
-              
-              // Aggiungi questo orderNumber ai già importati per evitare duplicati nello stesso file
-              if (orderNumber) {
-                existingOrderNumbers.add(orderNumber);
-                addedOrders.push(orderNumber);
-              }
-              
-              const items = order.items || order.lines || order.products || [];
-
-              items.forEach((item, itemIndex) => {
-                let qty =
-                  item.quantity_spools != null
-                    ? item.quantity_spools
-                    : item.quantitySpools != null
-                    ? item.quantitySpools
-                    : item.qty != null
-                    ? item.qty
-                    : item.quantity != null
-                    ? item.quantity
-                    : 1;
-
-                if (typeof qty === "string") {
-                  const parsed = parseFloat(qty.replace(",", "."));
-                  if (!isNaN(parsed)) qty = parsed;
-                }
-                if (!qty || qty < 0) qty = 1;
-
-                const brand = canonicalizeBrand(item.brand || order.brand || "");
-                const material = canonicalizeMaterial(item.material);
-                const variant = item.variant || item.color || "";
-                const colorCode = item.color_code || item.colorCode || "";
-                
-                // Extract price (unit_price or price_per_unit or subtotal/qty or total/qty)
-                let unitPrice = null;
-                if (item.unit_price != null) {
-                  unitPrice = parseFloat(item.unit_price);
-                } else if (item.price_per_unit != null) {
-                  unitPrice = parseFloat(item.price_per_unit);
-                } else if (item.subtotal != null && qty > 0) {
-                  // Se c'è subtotal e quantità > 1, divide per la quantità
-                  unitPrice = parseFloat(item.subtotal) / qty;
-                } else if (item.total != null && qty > 0) {
-                  // Se c'è total (prezzo totale) e quantità > 1, divide per la quantità
-                  unitPrice = parseFloat(item.total) / qty;
-                } else if (item.price != null) {
-                  // Se c'è solo price, controlla se è totale o unitario
-                  const priceValue = parseFloat(item.price);
-                  // Se la quantità è > 1 e il prezzo sembra essere totale (es. > 20€ per più unità), divide
-                  if (qty > 1 && priceValue > 20) {
-                    unitPrice = priceValue / qty;
-                  } else {
-                    unitPrice = priceValue;
-                  }
-                }
-                if (isNaN(unitPrice)) unitPrice = null;
-
-                // Extract packaging type (refill or spool)
-                let packagingType = item.packaging_type || item.form || null;
-                if (!packagingType && item.sku) {
-                  // Detect from SKU: SPLFREE = refill, SPL = spool
-                  if (item.sku.includes("SPLFREE") || item.sku.toLowerCase().includes("refill")) {
-                    packagingType = "refill";
-                  } else if (item.sku.includes("SPL")) {
-                    packagingType = "spool";
-                  }
-                }
-                if (!packagingType && variant) {
-                  // Detect from variant name
-                  const varLower = variant.toLowerCase();
-                  if (varLower.includes("ricarica") || varLower.includes("refill")) {
-                    packagingType = "refill";
-                  }
-                }
-
-                // Extract unit weight
-                let unitWeight = item.unit_weight_g || item.weight_g_per_spool || item.weight_g || null;
-                if (!unitWeight && item.sku) {
-                  // Try to extract from SKU pattern like 1.75-1000-SPL
-                  const weightMatch = item.sku.match(/-(\d+)-(SPL|SPLFREE)/i);
-                  if (weightMatch) {
-                    unitWeight = parseInt(weightMatch[1], 10);
-                  }
-                }
-                
-                // Se non c'è prezzo nel JSON, prova a prenderlo dalla mappa prezzi Bambu Lab
-                if (unitPrice == null && item.sku) {
-                  const autoPrice = getAutoPrice(item.sku);
-                  if (autoPrice != null) {
-                    unitPrice = autoPrice;
-                  }
-                }
-                
-                // Per pack 10 colori, dividi il prezzo per 10
-                if (item.sku && item.sku.includes("PALLET") && qty === 10 && unitPrice != null) {
-                  // Il prezzo nel JSON potrebbe essere il totale, quindi assicuriamoci sia per singola bobina
-                  if (unitPrice > 50) { // Se è > 50 probabilmente è il totale
-                    unitPrice = unitPrice / 10;
-                  }
-                }
-
-                const entry = {
-                  id:
-                    item.id ||
-                    `inv-${Date.now().toString(16)}-${orderIndex}-${itemIndex}`,
-                  order_number: orderNumber,
-                  order_date: orderDate,
-                  brand,
-                  material,
-                  variant,
-                  color_code: colorCode,
-                  packaging_type: packagingType,
-                  quantity_spools: qty,
-                  unit_weight_g: unitWeight,
-                  unit_price: unitPrice
-                };
-
-                newPurchased.push(entry);
-
-                if (brand && !brandList.includes(brand)) brandList.push(brand);
-                if (material && !materialList.includes(material))
-                  materialList.push(material);
-                if (variant && !colorList.includes(variant)) colorList.push(variant);
-              });
-            });
-
-            brandList = cleanBrandList(brandList);
-            materialList = cleanMaterialList(materialList);
-            colorList = Array.from(new Set(colorList));
-
-            localStorage.setItem(
-              BRAND_LIST_KEY,
-              JSON.stringify(brandList)
-            );
-            localStorage.setItem(
-              MATERIAL_LIST_KEY,
-              JSON.stringify(materialList)
-            );
-            localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
-
-            // Aggiungi i nuovi filamenti a quelli esistenti invece di sostituirli
-            purchasedFilaments = purchasedFilaments.concat(newPurchased);
-
-            autoSave();
-            renderPurchasedTable();
-            const ordersCount = Array.isArray(orders) ? orders.length : 0;
-            let totalSpools = 0;
-            newPurchased.forEach((entry) => {
-              const q =
-                entry.quantity_spools != null
-                  ? entry.quantity_spools
-                  : entry.quantitySpools != null
-                  ? entry.quantitySpools
-                  : 0;
-              totalSpools += q;
-            });
-            
-            // Messaggio con informazioni sui duplicati saltati
-            let msg = "Importati " +
-              newPurchased.length +
-              " filamenti comprati da " +
-              addedOrders.length +
-              " ordine/i (" +
-              formatNumber(totalSpools, 0) +
-              " bobine totali).";
-            
-            if (skippedOrders.length > 0) {
-              msg += " Saltati " + skippedOrders.length + " ordine/i già presenti: " + 
-                skippedOrders.slice(0, 3).join(", ") + 
-                (skippedOrders.length > 3 ? "..." : "");
-            }
-            
-            showToast(msg, skippedOrders.length > 0 ? "info" : "success");
-          } else {
-            showToast(
-              "JSON non riconosciuto: manca sia 'filaments' che 'orders'.",
-              "error"
-            );
-          }
-        } catch (err) {
-          console.error(err);
-          showToast("Errore nell'importazione del JSON.", "error");
-        } finally {
-          input.value = "";
-        }
+          const data = JSON.parse(event.target.result, (key, value) => {
+            if (["__proto__", "prototype", "constructor"].includes(key)) throw new Error("Chiave non ammessa nel JSON");
+            return value;
+          });
+          importJsonData(data);
+        } catch (error) {
+          console.error(error);
+          showToast("Importazione non applicata: " + error.message, "error");
+        } finally { input.value = ""; }
       };
       reader.readAsText(file, "utf-8");
     });
   }
 
   function clearPurchasedData() {
-    const ok = window.confirm(
-      "Vuoi davvero cancellare SOLO il magazzino filamenti comprati (dati fatture)?"
-    );
-    if (!ok) {
-      showToast(
-        "Operazione annullata: nessun dato è stato cancellato.",
-        "info"
-      );
-      return;
-    }
-
-    purchasedFilaments = [];
-    autoSave();
-    renderPurchasedTable();
-    renderDashboard();
+    if (!window.confirm("Cancellare il registro acquisti? I filamenti disponibili restano invariati.")) return;
+    const candidate = validateStateCandidate(captureStateSnapshot());
+    candidate.purchasedFilaments = [];
+    if (!commitReplacementState(candidate, "Cancellazione registro acquisti")) return;
+    refreshStateViews();
     closeSettingsModal();
-    showToast(
-      "Magazzino filamenti comprati cancellato. I filamenti disponibili restano invariati.",
-      "success"
-    );
+    showToast("Registro acquisti cancellato.", "success");
   }
 
   function clearAvailableData() {
-    const ok = window.confirm(
-      "Vuoi davvero cancellare SOLO il magazzino filamenti disponibili?"
-    );
-    if (!ok) {
-      showToast(
-        "Operazione annullata: nessun dato è stato cancellato.",
-        "info"
-      );
-      return;
-    }
-
-    filaments = [];
-    autoSave();
-    renderAll();
+    if (!window.confirm("Cancellare il magazzino disponibile? Acquisti e storico consumi restano invariati.")) return;
+    const candidate = validateStateCandidate(captureStateSnapshot());
+    candidate.filaments = [];
+    if (!commitReplacementState(candidate, "Cancellazione magazzino")) return;
+    refreshStateViews();
     closeSettingsModal();
-    showToast(
-      "Magazzino filamenti disponibili cancellato. I dati delle fatture restano memorizzati.",
-      "success"
-    );
+    showToast("Magazzino disponibile cancellato.", "success");
   }
 
   function clearAllData() {
-    const ok = window.confirm(
-      "Vuoi davvero cancellare TUTTI i dati (magazzino disponibile, magazzino comprato e preferenze)?"
-    );
-    if (!ok) {
-      showToast(
-        "Operazione annullata: nessun dato è stato cancellato.",
-        "info"
-      );
-      return;
-    }
-
-    filaments = [];
-    purchasedFilaments = [];
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(BRAND_LIST_KEY);
-      localStorage.removeItem(MATERIAL_LIST_KEY);
-      localStorage.removeItem(COLOR_LIST_KEY);
-    } catch (e) {
-      console.error("Errore nella pulizia del localStorage:", e);
-    }
-
-    loadState();
-    renderBrandOptions();
-    renderMaterialOptions();
-    renderColorOptions();
-    updateColorPreviewFromSelection();
-    renderAll();
+    if (!window.confirm("Azzerare inventario, acquisti, consumi, cronologia e preferenze? Una copia precedente resta disponibile per recupero.")) return;
+    const candidate = validateStateCandidate({ filaments: [], purchasedFilaments: [], consumptionHistory: [], locations: [], settings: { theme: "dark", lowStockThreshold: 25 } });
+    if (!commitReplacementState(candidate, "Azzeramento registro", false)) return;
+    // Il v4 vuoto è un tombstone: i dati legacy non vengono più ricaricati.
+    const legacyKeys = ["registroFilamentiState_v2", "registroFilamentiState_v1", "registroFilamentiState", BRAND_LIST_KEY, MATERIAL_LIST_KEY, COLOR_LIST_KEY, LOCATION_LIST_KEY, CONSUMPTION_HISTORY_KEY, UNDO_STACK_KEY, REDO_STACK_KEY, THEME_KEY, LOW_STOCK_THRESHOLD_KEY, VERSION_KEY];
+    try { legacyKeys.forEach(key => localStorage.removeItem(key)); }
+    catch (error) { console.warn("Chiavi legacy non rimosse; restano escluse dal registro v4:", error); }
+    pendingPurchasedTransfer = null;
+    refreshStateViews();
     closeSettingsModal();
-
-    showToast(
-      "Tutti i dati locali dell'app sono stati cancellati. Hai ora un registro vuoto.",
-      "success"
-    );
+    showToast("Registro azzerato. La copia precedente di sicurezza è conservata.", "success");
   }
 
   function setupUnitWeightPreset() {
@@ -8563,17 +6036,17 @@
     if (brand && !brandList.includes(brand)) {
       brandList.push(brand);
       brandList = cleanBrandList(brandList);
-      localStorage.setItem(BRAND_LIST_KEY, JSON.stringify(brandList));
+      /* Catalogo incluso nello snapshot del registro. */
     }
     if (material && !materialList.includes(material)) {
       materialList.push(material);
       materialList = cleanMaterialList(materialList);
-      localStorage.setItem(MATERIAL_LIST_KEY, JSON.stringify(materialList));
+      /* Catalogo incluso nello snapshot del registro. */
     }
     if (variant && !colorList.includes(variant)) {
       colorList.push(variant);
       colorList = Array.from(new Set(colorList));
-      localStorage.setItem(COLOR_LIST_KEY, JSON.stringify(colorList));
+      /* Catalogo incluso nello snapshot del registro. */
     }
 
     renderBrandOptions();
@@ -8711,12 +6184,18 @@
 
   // Funzioni per gestire la soglia di allarme
   function getLowStockThreshold() {
-    const saved = localStorage.getItem(LOW_STOCK_THRESHOLD_KEY);
-    return saved ? parseFloat(saved) : 25; // Default 25%
+    return appSettings.lowStockThreshold;
   }
 
   function saveLowStockThreshold(threshold) {
-    localStorage.setItem(LOW_STOCK_THRESHOLD_KEY, String(threshold));
+    try {
+      const value = parseImportNumber(threshold, "Soglia scorte", { max: 100 });
+      if (value === appSettings.lowStockThreshold) return true;
+      return commitMutation("Modificata soglia scorte", () => { appSettings.lowStockThreshold = value; });
+    } catch (error) {
+      showToast("Soglia non salvata: " + error.message, "error");
+      return false;
+    }
   }
 
   function openSettingsModal() {
@@ -8736,16 +6215,11 @@
 
   // Funzione per trovare le bobine sotto la soglia
   function getLowStockFilaments(threshold) {
-    return filaments.filter(f => {
-      if (!f.total_weight_g || f.total_weight_g === 0) return false;
-      const ratio = f.remaining_weight_g / f.total_weight_g;
-      return ratio <= (threshold / 100);
-    }).sort((a, b) => {
-      // Ordina per percentuale residua (dal più basso al più alto)
-      const ratioA = a.total_weight_g > 0 ? a.remaining_weight_g / a.total_weight_g : 0;
-      const ratioB = b.total_weight_g > 0 ? b.remaining_weight_g / b.total_weight_g : 0;
-      return ratioA - ratioB;
-    });
+    const ratio = f => {
+      const capacity = ((f.sealed_spools || 0) + (f.open_spools || 0)) * (f.unit_weight_g || 0);
+      return capacity > 0 ? (f.remaining_weight_g || 0) / capacity : Infinity;
+    };
+    return filaments.filter(f => ratio(f) <= threshold / 100).sort((a, b) => ratio(a) - ratio(b));
   }
 
   // Funzione per mostrare il resoconto delle bobine in esaurimento
@@ -8768,7 +6242,8 @@
     listContainer.innerHTML = "";
     
     lowStockFilaments.forEach(f => {
-      const ratio = f.total_weight_g > 0 ? f.remaining_weight_g / f.total_weight_g : 0;
+      const activeCapacity = ((f.sealed_spools || 0) + (f.open_spools || 0)) * f.unit_weight_g;
+      const ratio = activeCapacity > 0 ? f.remaining_weight_g / activeCapacity : 0;
       const percentage = Math.round(ratio * 100);
       
       const item = document.createElement("div");
@@ -8781,15 +6256,15 @@
       const barHtml = `
         <div style="flex: 1; display: flex; flex-direction: column; gap: 0.25rem;">
           <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
-            <span style="font-weight: 600;">${canonicalizeBrand(f.brand) || "-"} – ${f.material || "-"}</span>
+            <span style="font-weight: 600;">${escapeHtml(canonicalizeBrand(f.brand) || "-")} – ${escapeHtml(f.material || "-")}</span>
             <span style="color: var(--text-muted);">${percentage}% residuo</span>
           </div>
           <div style="background: rgba(15, 23, 42, 0.7); border-radius: 999px; overflow: hidden; height: 8px; position: relative;">
-            <div style="width: ${percentage}%; height: 100%; background: ${percentage <= 25 ? '#ef4444' : percentage <= 50 ? '#f59e0b' : '#22c55e'}; transition: width 0.3s ease; border-radius: 999px;"></div>
+            <div style="width: ${percentage}%; height: 100%; background: ${percentage <= threshold ? '#ef4444' : '#f59e0b'}; transition: width 0.3s ease; border-radius: 999px;"></div>
           </div>
           <div style="display: flex; gap: 1rem; font-size: 0.75rem; color: var(--text-muted);">
-            <span>${f.spools_total || 0} bobina${f.spools_total !== 1 ? 'e' : 'a'}</span>
-            <span>${formatNumber(f.remaining_weight_g || 0, 0)}g / ${formatNumber(f.total_weight_g || 0, 0)}g</span>
+            <span>${(f.sealed_spools || 0) + (f.open_spools || 0)} bobine attive</span>
+            <span>${formatNumber(f.remaining_weight_g || 0, 0)}g / ${formatNumber(activeCapacity, 0)}g</span>
           </div>
         </div>
       `;
@@ -8979,7 +6454,7 @@
     if (refreshBtn) {
       refreshBtn.addEventListener("click", () => {
         // Forza un salvataggio immediato prima di ricaricare
-        saveState();
+        if (!saveState()) return;
         loadState();
         renderBrandOptions();
         renderMaterialOptions();
@@ -9064,6 +6539,8 @@
 
       // Scorciatoie da tastiera per undo/redo
       document.addEventListener("keydown", (e) => {
+      // Gli editor mantengono il proprio annulla/ripristina del testo.
+      if (e.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
       // Ctrl+Z o Cmd+Z per undo
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -9139,12 +6616,11 @@
           showToast("Inserisci un nome per la posizione.", "error");
           return;
         }
-        if (locationList.includes(newLocation)) {
+        if (locationList.some(name => name.toLocaleLowerCase("it-IT") === newLocation.toLocaleLowerCase("it-IT"))) {
           showToast("Una posizione con questo nome esiste già.", "error");
           return;
         }
-        locationList.push(newLocation);
-        saveLocationList();
+        if (!commitMutation(`Aggiunta posizione: ${newLocation}`, () => { locationList.push(newLocation); })) return;
         newLocationInput.value = "";
         renderLocationsList();
         renderAll(); // Aggiorna tutti i dropdown
@@ -9196,7 +6672,7 @@
                   <div style="padding: 0.5rem; background: rgba(239, 68, 68, 0.15); border-radius: 0.375rem; border-left: 3px solid var(--danger);">
                     <strong style="color: var(--danger);">✗ Errore in: ${key}</strong>
                     <div style="font-size: 0.85rem; margin-top: 0.25rem; color: var(--text-muted);">
-                      ${e.message}
+                      ${escapeHtml(e.message)}
                     </div>
                   </div>
                 `;
@@ -9276,10 +6752,21 @@
     }
     
     if (btnCopyDebugInfo && debugInfoText) {
-      btnCopyDebugInfo.addEventListener("click", () => {
-        debugInfoText.select();
-        document.execCommand("copy");
-        showToast("Informazioni copiate negli appunti!", "success");
+      btnCopyDebugInfo.addEventListener("click", async () => {
+        try {
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(debugInfoText.textContent);
+          else {
+            const text = document.createElement("textarea");
+            text.value = debugInfoText.textContent;
+            text.style.cssText = "position:fixed;opacity:0;";
+            debugInfoContainer.appendChild(text);
+            text.select();
+            const copied = document.execCommand("copy");
+            text.remove();
+            if (!copied) throw new Error("Copia non disponibile");
+          }
+          showToast("Informazioni copiate negli appunti!", "success");
+        } catch (error) { showToast("Copia non riuscita: seleziona e copia il testo della diagnostica.", "error"); }
       });
     }
 
@@ -9303,9 +6790,11 @@
           stockSearchClear.style.display = currentSearch.trim() ? "flex" : "none";
         }
         
+        let searchRenderTimer;
         stockSearchInput.addEventListener("input", (e) => {
         currentSearch = e.target.value || "";
-        renderFilamentTable();
+        clearTimeout(searchRenderTimer);
+        searchRenderTimer = setTimeout(renderFilamentTable, 120);
           // Mostra/nascondi pulsante X
           if (stockSearchClear) {
             stockSearchClear.style.display = currentSearch.trim() ? "flex" : "none";
@@ -9358,24 +6847,7 @@
         });
       });
 
-    document
-      .getElementById("filamentTableBody")
-      .addEventListener("click", (e) => {
-        const btn = e.target.closest("button");
-        if (!btn) return;
-        const id = btn.getAttribute("data-id");
-        if (!id) return;
-        // Il pulsante Modifica ha classe "btn-action btn-success" e contiene "Modifica" nel testo
-        const isEditButton = btn.classList.contains("btn-edit") || 
-                           (btn.classList.contains("btn-action") && btn.textContent.includes("Modifica"));
-        const isDeleteButton = btn.classList.contains("btn-delete") || 
-                              (btn.classList.contains("btn-action") && btn.textContent.includes("Elimina"));
-        if (isEditButton) {
-          openEditFilamentModal(id);
-        } else if (isDeleteButton) {
-          deleteFilament(id);
-        }
-      });
+
 
     // Chiudi qualsiasi modal aperto quando si clicca sull'overlay
     const overlay = document.getElementById("modalOverlay");
@@ -9520,7 +6992,7 @@
         if (btnText.includes("Modifica")) {
           openEditFilamentModal(filamentId);
         } else if (btnText.includes("Elimina")) {
-          deleteFilament(filamentId);
+          deleteFilament(filamentId, readSelectedSpoolIds(btn));
         }
       });
     }
@@ -9637,18 +7109,22 @@
         );
       });
 
-    // Chiudi le modali con ESC per una UX più fluida
-    // Cerca qualsiasi modal aperto e lo chiude, ripristinando la posizione di scroll
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        const openModal = document.querySelector(".modal.is-open");
-        if (openModal) {
-          const modalId = openModal.id;
-          if (modalId) {
-            closeModalCentered(modalId);
-          }
-        }
-      }
+    // Escape chiude prima il menu attivo; Tab resta nella finestra in primo piano.
+    document.addEventListener("keydown", event => {
+      if (event.defaultPrevented) return;
+      const entry = modalStack[modalStack.length - 1];
+      if (!entry) return;
+      if (event.key === "Escape") { event.preventDefault(); closeModalCentered(entry.modal.id); return; }
+      if (event.key !== "Tab") return;
+      const controls = modalFocusableElements(entry.modal);
+      if (!controls.length) { event.preventDefault(); entry.modal.focus(); return; }
+      const index = controls.indexOf(document.activeElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); controls[controls.length - 1].focus(); }
+      else if (!event.shiftKey && (index < 0 || index === controls.length - 1)) { event.preventDefault(); controls[0].focus(); }
+    });
+
+    window.addEventListener("resize", () => {
+      modalStack.forEach(entry => resetModalPosition(entry.modal.id));
     });
 
       // Inizializza salvataggio automatico
