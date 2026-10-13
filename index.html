@@ -172,11 +172,11 @@
                 stroke-linecap="round"
               />
             </svg>
-            Rotoli totali
+            Bobine disponibili
           </div>
           <div class="summary-card-value" id="totalSpoolsValue">0</div>
           <div class="summary-card-sub">
-            Somma di tutte le bobine inserite a magazzino.
+            Bobine sigillate e aperte ancora disponibili.
           </div>
         </div>
       </div>
@@ -233,7 +233,7 @@
           </div>
           <div class="summary-card-value" id="totalUsedGramsValue">0 g</div>
           <div class="summary-card-sub">
-            Differenza tra grammi acquistati e residui stimati.
+            Differenza tra massa iniziale registrata e residuo stimato.
           </div>
         </div>
       </div>
@@ -255,11 +255,11 @@
                 stroke-linecap="round"
               />
             </svg>
-            Rotoli critici
+            Filamenti sotto soglia
           </div>
           <div class="summary-card-value" id="lowStockCountValue">0</div>
           <div class="summary-card-sub">
-            Rotoli quasi finiti o ultima bobina aperta del colore.
+            Filamenti sotto la soglia configurata nelle impostazioni.
           </div>
         </div>
       </div>
@@ -468,7 +468,7 @@
         Aggiungi filamento
       </button>
 
-      <div style="display:flex;gap:0.75rem;align-items:center;">
+      <div class="json-actions" style="display:flex;gap:0.75rem;align-items:center;">
         <button type="button" class="btn-json-import" id="importJsonButton" style="display:inline-flex; align-items:center; gap:0.5rem; padding: 0.6rem 1.2rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 0.5rem; font-weight: 600; font-size: inherit; line-height: 1.5; border: none; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); transition: all 0.2s ease; cursor: pointer; margin: 0; vertical-align: middle;" title="Importa database da file JSON">
           <svg viewBox="0 0 24 24" fill="none" style="width:20px;height:20px;flex-shrink:0;">
             <path d="M12 3v12M12 15l-4-4M12 15l4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -628,7 +628,7 @@
             <th data-sort-field="unit_weight_g" class="sortable resizable" style="width: 70px; min-width: 65px;">g/bob.</th>
             <th data-sort-field="total_weight_g" class="sortable resizable" style="width: 80px; min-width: 75px;">g tot.</th>
             <th data-sort-field="remaining_weight_g" class="sortable resizable" style="width: 85px; min-width: 80px;">g residui</th>
-            <th data-sort-field="remaining_weight_g" class="sortable resizable" style="width: 200px; min-width: 180px;">Barra residuo</th>
+            <th data-sort-field="remaining_ratio" class="sortable resizable" style="width: 200px; min-width: 180px;">Barra residuo</th>
             <th data-sort-field="unit_price" class="sortable resizable" style="width: 75px; min-width: 70px;">€/bob.</th>
             <th data-sort-field="location" class="sortable resizable" style="width: 115px; min-width: 95px;">Posizione</th>
             <th>Azioni</th>
@@ -1007,14 +1007,14 @@
       Qui puoi visualizzare l'andamento dei consumi nel tempo.
     </p>
 
-    <!-- Calcolo consumi per differenza (Acquistato - Presente) -->
+    <!-- Bilancio quantità (Caricato - Presente) -->
     <details style="margin-top: 1rem; margin-bottom: 1rem;">
       <summary style="cursor: pointer; padding: 0.75rem; background: var(--surface); border-radius: 0.5rem; font-weight: 600;">
-        📊 Calcolo consumi per differenza (Acquistato - Presente)
+        📊 Bilancio quantità (Caricato - Presente)
       </summary>
       <div style="margin-top: 1rem;">
         <p class="hint" style="margin-bottom: 0.75rem;">
-          Questo calcolo confronta il materiale acquistato (da fatture/ordini) con quello presente in magazzino.
+          Il caricato comprende acquisti e inventario iniziale. Il presente include anche gli acquisti ancora da trasferire. I vecchi backup possono avere una storia incompleta.
           La differenza rappresenta il materiale consumato.
         </p>
         <div id="consumptionByDifferenceContainer" style="margin-top: 0.5rem;">
@@ -1037,7 +1037,7 @@
       </div>
       <div class="consumption-stat-card">
         <div class="consumption-stat-value" id="statAvgPerDay">0 g</div>
-        <div class="consumption-stat-label">Media giornaliera</div>
+        <div class="consumption-stat-label">Media nei giorni con consumi</div>
       </div>
       <div class="consumption-stat-card">
         <div class="consumption-stat-value" id="statEntries">0</div>
@@ -1091,8 +1091,8 @@
 </main>
 
 <!-- Modal consumo -->
-<div id="modalOverlay" class="modal-overlay"></div>
-<div id="consumptionModal" class="modal">
+<div id="modalOverlay" class="modal-overlay" hidden></div>
+<div id="consumptionModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog">
     <div class="modal-header">
       <div class="modal-title">
@@ -1194,7 +1194,7 @@
 </div>
 
 <!-- Modal per eliminare bobine -->
-<div id="deleteSpoolsModal" class="modal">
+<div id="deleteSpoolsModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog" style="max-width: 900px;">
     <div class="modal-header">
       <div class="modal-title">
@@ -1243,7 +1243,7 @@
 </div>
 
 <!-- Modal per modificare un filamento esistente -->
-<div id="editFilamentModal" class="modal">
+<div id="editFilamentModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog" style="max-width: 900px;">
     <div class="modal-header">
       <div class="modal-title">
@@ -1372,7 +1372,7 @@
 </div>
 
 <!-- Modal Aggiungi al magazzino -->
-<div id="addToStockModal" class="modal">
+<div id="addToStockModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog" style="max-width: 900px;">
     <div class="modal-header">
       <div class="modal-title">
@@ -1435,7 +1435,7 @@
 </div>
 
 <!-- Impostazioni / reset dati -->
-<div id="settingsModal" class="modal">
+<div id="settingsModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog" style="max-width: 1100px; max-height: 95vh; min-height: 85vh; overflow-y: auto;">
     <div class="modal-header">
       <div class="modal-title">
@@ -1583,7 +1583,7 @@
 </div>
 
 <!-- Modal resoconto bobine in esaurimento -->
-<div id="lowStockReportModal" class="modal">
+<div id="lowStockReportModal" class="modal" hidden inert role="dialog" aria-modal="false">
   <div class="modal-dialog" style="max-width: 900px;">
     <div class="modal-header">
       <div class="modal-title">
