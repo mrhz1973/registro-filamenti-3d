@@ -1,6 +1,6 @@
 # 📋 Briefing Progetto: Registro Filamenti 3D
 
-> **Aggiornamento V.104 (14 ottobre 2026):** leggere prima [V104.md](V104.md) e il README. Le sezioni storiche sotto descrivono la base precedente: grafici SVG senza Chart.js, versione software fissa con revisione dati separata e schema 4 con snapshot completi sono ora implementati.
+> **Aggiornamento V.105 (14 ottobre 2026):** leggere prima [V105.md](V105.md), [V104.md](V104.md) e il README. Sono ora presenti limiti di capacità AMS e selezione della singola bobina dalla vista posizioni. Le sezioni storiche sotto descrivono la base precedente: grafici SVG senza Chart.js, versione software fissa con revisione dati separata e schema 4 con snapshot completi sono già implementati.
 
 > **Per Cursor AI**: Leggi questo documento PRIMA di toccare il codice. Contiene contesto, architettura, convenzioni e roadmap. Le regole operative sono in `.cursorrules` nella root.
 

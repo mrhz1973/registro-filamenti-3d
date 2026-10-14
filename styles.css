@@ -2264,3 +2264,19 @@
       #purchasedSection > div:first-child { flex-wrap: wrap; gap: 0.5rem; }
     }
   
+/* Capacità fisica AMS e bobina selezionata nella vista delle posizioni. */
+.ams-capacity-warning {
+  margin: .6rem 0;
+  padding: .65rem .8rem;
+  border: 1px solid #f59e0b;
+  border-radius: .5rem;
+  color: var(--text-main);
+  background: rgba(245, 158, 11, .13);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.selected-spool-row {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  scroll-margin: 1rem;
+}
