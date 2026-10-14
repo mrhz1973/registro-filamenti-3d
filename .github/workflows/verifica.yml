@@ -19,4 +19,4 @@ jobs:
       - name: Sintassi JavaScript
         run: node --check app.js
       - name: Dati, migrazioni e calcoli
-        run: node --test tests/data.test.cjs tests/domain.test.cjs tests/mutation.test.cjs
+        run: node --test tests/data.test.cjs tests/domain.test.cjs tests/mutation.test.cjs tests/ams-capacity.test.cjs tests/ams-view.test.cjs

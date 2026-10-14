@@ -7,7 +7,7 @@
   }
 
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.104";
+  const INITIAL_VERSION = "V.105";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -1070,6 +1070,15 @@
   }
 
   function commitDomainState(previous) {
+    try {
+      assertAmsCapacityTransition(previous.filaments, filaments);
+    } catch (error) {
+      applyStateSnapshot(previous, true);
+      renderAll();
+      updateHistoryUI();
+      showToast(error.message, "error");
+      return false;
+    }
     if (saveState(true) !== false) return true;
     if (typeof applyStateSnapshot === "function") applyStateSnapshot(previous, true);
     else {
@@ -1162,6 +1171,68 @@
       location: f.spools_locations[index] || "",
       variant: f.spools_variants[index] || f.variant || ""
     }));
+  }
+
+  function getAmsLocationInfo(location) {
+    const normalized = String(location || "").trim().toLowerCase().replace(/[/_-]+/g, " ").replace(/\s+/g, " ");
+    const ht = normalized.match(/^ams\s*ht(?:\s*(?:#|n\.?|unità)?\s*(\d+))?$/);
+    const pro = normalized.match(/^(?:ams\s*(?:2\s*pro|pro|h2d)?|h2d\s*ams)(?:\s*(?:#|n\.?|unità)?\s*(\d+))?$/);
+    const match = ht || pro;
+    if (match) {
+      const number = match[1] ? match[1].replace(/^0+(?=\d)/, "") : "";
+      const key = ht ? "ams-ht" : "ams-pro";
+      const label = ht ? "AMS HT" : "AMS 2 Pro";
+      return { key: key + (number ? ":" + number : ""), label: label + (number ? " " + number : ""), capacity: ht ? 1 : 4 };
+    }
+    return null;
+  }
+
+  function normalizeStorageLocation(location) {
+    const ams = getAmsLocationInfo(location);
+    return ams ? ams.key : String(location || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
+  function getAmsOccupancy(list = filaments) {
+    const units = new Map();
+    for (const f of list) {
+      const count = (f.sealed_spools || 0) + (f.open_spools || 0);
+      for (let index = 0; index < count; index++) {
+        const sealed = index < (f.sealed_spools || 0);
+        const fraction = sealed ? 1 : f.open_spools_fractions?.[index - (f.sealed_spools || 0)];
+        if (fraction === 0) continue;
+        const location = f.spools_locations?.[index] ?? f.location ?? "";
+        const ams = getAmsLocationInfo(location);
+        if (!ams) continue;
+        if (!units.has(ams.key)) units.set(ams.key, { ...ams, count: 0, spoolIds: [], spools: [] });
+        const unit = units.get(ams.key);
+        const id = f.spools_ids?.[index] || `${f.id}:${index}`;
+        unit.count++;
+        unit.spoolIds.push(id);
+        unit.spools.push({ id, filamentId: f.id, location, brand: f.brand, material: f.material,
+          variant: f.spools_variants?.[index] || f.variant || "" });
+      }
+    }
+    return [...units.values()];
+  }
+
+  function getAmsCapacityConflicts(list = filaments) {
+    return getAmsOccupancy(list).filter(unit => unit.count > unit.capacity);
+  }
+
+  function getAmsCapacityMessage(conflicts) {
+    const details = conflicts.map(unit => `${unit.label}: ${unit.count} bobine assegnate, massimo ${unit.capacity}`).join("; ");
+    return `Capacità AMS superata (${details}). Sposta prima una bobina già presente in un'altra posizione, poi assegna la nuova bobina.`;
+  }
+
+  function assertAmsCapacityTransition(beforeFilaments, afterFilaments) {
+    const previous = new Map(getAmsOccupancy(beforeFilaments).map(unit => [unit.key, new Set(unit.spoolIds)]));
+    // Le vecchie assegnazioni in conflitto restano recuperabili: sono consentite solo
+    // modifiche innocue o rimozioni finché l'unità non rientra nella sua capacità.
+    const introduced = getAmsCapacityConflicts(afterFilaments).filter(unit => {
+      const existing = previous.get(unit.key) || new Set();
+      return unit.spoolIds.some(id => !existing.has(id));
+    });
+    if (introduced.length) throw new Error(getAmsCapacityMessage(introduced));
   }
 
   function setActiveFilamentSpools(f, spools) {
@@ -2114,16 +2185,16 @@
           if (!Array.isArray(f[field]) || f[field].length !== f.sealed_spools + f.open_spools) throw new Error(field + ": lunghezza incoerente con le bobine attive");
         }
         if (f.spools_ids.some(id => !id) || new Set(f.spools_ids).size !== f.spools_ids.length) throw new Error("Identità bobine duplicate o mancanti");
-        for (const id of f.spools_ids) {
-          if (allSpoolIds.has(id)) throw new Error("Identità bobina condivisa tra filamenti: " + id);
-          allSpoolIds.add(id);
-        }
       }
       if (f.spools_prices !== undefined) {
         if (!Array.isArray(f.spools_prices)) throw new Error("Prezzi bobine: elenco richiesto");
         f.spools_prices = f.spools_prices.map(value => parseImportNumber(value, "Prezzo bobina", { optional: true }));
       }
       recalcWeightsForFilament(f);
+      for (const id of f.spools_ids) {
+        if (allSpoolIds.has(id)) throw new Error("Identità bobina condivisa tra filamenti: " + id);
+        allSpoolIds.add(id);
+      }
       return f;
     });
     const purchaseIds = new Set();
@@ -2240,6 +2311,7 @@
       saveStateForUndo(actionDescription);
       mutate();
       const candidate = validateStateCandidate(captureStateSnapshot(true));
+      assertAmsCapacityTransition(before.filaments, candidate.filaments);
       applyStateSnapshot(candidate, true);
       if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return false; }
       updateHistoryUI();
@@ -2454,34 +2526,46 @@
   }
 
   function undoAction() {
-    if (!undoStack.length) return showToast("Nessuna azione da annullare", "info");
+    if (!undoStack.length) { showToast("Nessuna azione da annullare", "info"); return false; }
     const before = captureStateSnapshot(true);
+    let candidate;
+    try {
+      candidate = validateStateCandidate(undoStack[undoStack.length - 1], false);
+      assertAmsCapacityTransition(before.filaments, candidate.filaments);
+    } catch (error) { showToast("Annullamento non applicato: " + error.message, "error"); return false; }
     const previous = undoStack.pop();
     redoStack.push({ ...captureStateSnapshot(), actionDescription: previous.actionDescription, timestamp: new Date().toISOString() });
-    applyStateSnapshot(validateStateCandidate(previous, false));
-    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return; }
+    applyStateSnapshot(candidate);
+    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return false; }
     renderAll();
     renderConsumptionChart();
     renderConsumptionHistory();
     renderConsumptionStats();
     updateHistoryUI();
     showToast("Annullato: " + previous.actionDescription, "success");
+    return true;
   }
 
   function redoAction() {
-    if (!redoStack.length) return showToast("Nessuna azione da ripristinare", "info");
+    if (!redoStack.length) { showToast("Nessuna azione da ripristinare", "info"); return false; }
     const before = captureStateSnapshot(true);
+    let candidate;
+    try {
+      candidate = validateStateCandidate(redoStack[redoStack.length - 1], false);
+      assertAmsCapacityTransition(before.filaments, candidate.filaments);
+    } catch (error) { showToast("Ripristino non applicato: " + error.message, "error"); return false; }
     const next = redoStack.pop();
     undoStack.push({ ...captureStateSnapshot(), actionDescription: next.actionDescription, timestamp: new Date().toISOString() });
     if (undoStack.length > MAX_UNDO_HISTORY) undoStack.shift();
-    applyStateSnapshot(validateStateCandidate(next, false));
-    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return; }
+    applyStateSnapshot(candidate);
+    if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return false; }
     renderAll();
     renderConsumptionChart();
     renderConsumptionHistory();
     renderConsumptionStats();
     updateHistoryUI();
     showToast("Ripristinato: " + next.actionDescription, "success");
+    return true;
   }
 
   function updateHistoryUI() {
@@ -2537,7 +2621,7 @@
             e.stopPropagation();
             // Annulla fino a questo punto (index 0 = più recente, quindi annulla index+1 volte)
             for (let i = 0; i <= index; i++) {
-              undoAction();
+              if (!undoAction()) break;
             }
             if (undoDropdown) undoDropdown.style.display = "none";
           });
@@ -2577,7 +2661,7 @@
             e.stopPropagation();
             // Ripristina fino a questo punto (index 0 = più recente, quindi ripristina index+1 volte)
             for (let i = 0; i <= index; i++) {
-              redoAction();
+              if (!redoAction()) break;
             }
             if (redoDropdown) redoDropdown.style.display = "none";
           });
@@ -2594,15 +2678,21 @@
 
   // Funzione per tornare a uno stato specifico nella cronologia
   function restoreToHistoryState(targetIndex) {
-    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= undoStack.length) return;
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= undoStack.length) return false;
     const previous = captureStateSnapshot(true);
     const target = undoStack[targetIndex];
+    let candidate;
+    try {
+      candidate = validateStateCandidate(target, false);
+      assertAmsCapacityTransition(previous.filaments, candidate.filaments);
+    } catch (error) { showToast("Ripristino cronologia non applicato: " + error.message, "error"); return false; }
     redoStack.push({ ...captureStateSnapshot(), actionDescription: target.actionDescription, timestamp: new Date().toISOString() });
     undoStack = undoStack.slice(0, targetIndex);
-    applyStateSnapshot(validateStateCandidate(target, false));
-    if (!saveState()) { applyStateSnapshot(previous, true); updateHistoryUI(); return; }
+    applyStateSnapshot(candidate);
+    if (!saveState()) { applyStateSnapshot(previous, true); updateHistoryUI(); return false; }
     refreshStateViews();
     showToast("Ripristinato a: " + target.actionDescription, "success");
+    return true;
   }
 
   // Renderizza la lista della cronologia
@@ -2706,6 +2796,8 @@
       lastSavedPayload = input.schemaVersion === STATE_SCHEMA_VERSION ? statePayload(candidate) : "";
       stateReady = true;
       installStorageConflictListener();
+      const capacityConflicts = getAmsCapacityConflicts(candidate.filaments);
+      if (capacityConflicts.length) showToast("Assegnazioni precedenti da correggere. " + getAmsCapacityMessage(capacityConflicts), "warning");
       return true;
     } catch (error) {
       storageWriteBlocked = true;
@@ -4599,72 +4691,20 @@
     
     container.innerHTML = "";
     
-    // Raggruppa i filamenti per posizione
-    // Usa una Map per normalizzare le posizioni (chiave normalizzata -> {originalName, spools})
-    const locationsMap = new Map(); // Map<normalizedLocation, {originalName, spools: []}>
-    
-    // Funzione per normalizzare una posizione (rimuove spazi extra, converte in lowercase)
-    function normalizeLocation(loc) {
-      return loc.trim().toLowerCase().replace(/\s+/g, ' ');
-    }
-    
+    // Stesse identità, posizioni e frazioni dell'editor: gli array legacy
+    // possono contenere posizioni residue che non rappresentano bobine attive.
+    const locationsMap = new Map();
     filaments.forEach(f => {
-      const totalSpools = (f.sealed_spools || 0) + (f.open_spools || 0);
-      const remainingWeight = f.remaining_weight_g || 0;
-      
-      // Escludi i filamenti completamente finiti (stesso filtro di renderFilamentTable)
-      if (remainingWeight === 0 || (totalSpools === 0 && remainingWeight === 0)) {
-        return; // Salta questo filamento - è finito
-      }
-      
-      // Se ha spools_locations, usa quello
-      if (f.spools_locations && Array.isArray(f.spools_locations)) {
-        f.spools_locations.forEach((location, index) => {
-          if (location && location.trim() !== "") {
-            const normalized = normalizeLocation(location);
-            if (!locationsMap.has(normalized)) {
-              locationsMap.set(normalized, {
-                originalName: location.trim(), // Mantieni la prima occorrenza come nome originale
-                spools: []
-              });
-            }
-            const entry = locationsMap.get(normalized);
-            // Se troviamo un nome più "standard" (es. con maiuscole corrette), usalo
-            const trimmed = location.trim();
-            if (trimmed.length > 0 && (entry.originalName.toLowerCase() !== normalized || 
-                (trimmed[0] === trimmed[0].toUpperCase() && entry.originalName[0] !== entry.originalName[0].toUpperCase()))) {
-              // Preferisci nomi con maiuscole corrette
-              if (trimmed[0] === trimmed[0].toUpperCase() && entry.originalName[0] !== entry.originalName[0].toUpperCase()) {
-                entry.originalName = trimmed;
-              }
-            }
-            entry.spools.push({
-              filament: f,
-              spoolIndex: index,
-              isSealed: index < (f.sealed_spools || 0)
-            });
-          }
-        });
-      } 
-      // Altrimenti usa il campo location globale
-      else if (f.location && f.location.trim() !== "") {
-        const normalized = normalizeLocation(f.location);
+      getActiveFilamentSpools(f).forEach(spool => {
+        if (!spool.location.trim() || spool.fraction <= 0) return;
+        const normalized = normalizeStorageLocation(spool.location);
         if (!locationsMap.has(normalized)) {
           locationsMap.set(normalized, {
-            originalName: f.location.trim(),
-            spools: []
+            originalName: getAmsLocationInfo(spool.location)?.label || spool.location.trim(), spools: []
           });
         }
-        const entry = locationsMap.get(normalized);
-        // Aggiungi tutte le bobine a questa posizione
-        for (let i = 0; i < totalSpools; i++) {
-          entry.spools.push({
-            filament: f,
-            spoolIndex: i,
-            isSealed: i < (f.sealed_spools || 0)
-          });
-        }
-      }
+        locationsMap.get(normalized).spools.push({ filament: f, spool, isSealed: spool.sealed });
+      });
     });
     
     // Se non ci sono posizioni, mostra un messaggio
@@ -4694,6 +4734,7 @@
       const location = originalName; // Usa il nome originale per la visualizzazione
       
       const locationCard = document.createElement("div");
+      locationCard.dataset.locationKey = normalized;
       locationCard.style.cssText = "background: var(--surface-soft); border-radius: 0.75rem; padding: 1rem; border: 2px solid var(--border-subtle); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); position: relative; overflow: hidden;";
       
       // Aggiungi un effetto "box" con bordi interni
@@ -4766,7 +4807,10 @@
       
       const spoolsCount = document.createElement("span");
       spoolsCount.style.cssText = "font-size: 0.65rem; color: var(--text-muted); font-weight: 600;";
-      spoolsCount.textContent = `${spools.length} bobina${spools.length !== 1 ? 'e' : 'a'}`;
+      const amsInfo = getAmsLocationInfo(location);
+      spoolsCount.textContent = amsInfo
+        ? `${spools.length} / ${amsInfo.capacity} posti`
+        : `${spools.length} bobin${spools.length !== 1 ? "e" : "a"}`;
       
       locationHeader.appendChild(locationTitle);
       locationHeader.appendChild(spoolsCount);
@@ -4774,18 +4818,36 @@
       if (locationInfo.description) {
         locationCard.appendChild(locationDescription);
       }
+      if (amsInfo && spools.length > amsInfo.capacity) {
+        const warning = document.createElement("div");
+        warning.className = "ams-capacity-warning";
+        warning.setAttribute("role", "status");
+        const excess = spools.length - amsInfo.capacity;
+        warning.textContent = `Posizioni da correggere: ${excess} bobin${excess === 1 ? "a" : "e"} in più. Clicca una bobina e spostala in un'altra posizione. Non puoi aggiungerne altre finché non liberi un posto.`;
+        locationCard.appendChild(warning);
+      }
       
       // Container per le bobine - layout orizzontale come scaffale/box
       const spoolsGrid = document.createElement("div");
       spoolsGrid.style.cssText = "display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: stretch; padding: 0.5rem; background: rgba(15, 23, 42, 0.3); border-radius: 0.5rem; border: 1px solid var(--border-subtle); min-height: 200px;";
       
-      spools.forEach(({ filament, spoolIndex, isSealed }) => {
+      spools.forEach(({ filament, spool, isSealed }) => {
         const spoolCard = document.createElement("div");
+        spoolCard.dataset.spoolId = spool.id;
+        spoolCard.dataset.filamentId = filament.id;
+        spoolCard.setAttribute("role", "button");
+        spoolCard.tabIndex = 0;
         spoolCard.style.cssText = "background: var(--surface); border-radius: 0.5rem; padding: 0.75rem; border: 1px solid var(--border-subtle); cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; width: 140px; min-height: 180px; flex-shrink: 0;";
-        spoolCard.title = `Clicca per modificare: ${canonicalizeBrand(filament.brand)} – ${filament.material} – ${filament.variant}`;
+        spoolCard.title = `Modifica questa bobina: ${canonicalizeBrand(filament.brand)} – ${filament.material} – ${spool.variant} · ${spool.location}`;
         
         spoolCard.addEventListener("click", () => {
-          openEditFilamentModal(filament.id);
+          openEditFilamentModal(filament.id, spool.id);
+        });
+        spoolCard.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openEditFilamentModal(filament.id, spool.id);
+          }
         });
         
         spoolCard.addEventListener("mouseenter", () => {
@@ -4817,9 +4879,7 @@
         spoolCard.appendChild(cardHeader);
         
         // Colore del filamento - usa il colore specifico della bobina se disponibile
-        const spoolVariant = (filament.spools_variants && Array.isArray(filament.spools_variants) && filament.spools_variants[spoolIndex]) 
-          ? filament.spools_variants[spoolIndex] 
-          : filament.variant;
+        const spoolVariant = spool.variant;
         const colorHex = getColorHex(spoolVariant);
         const colorDot = document.createElement("div");
         colorDot.style.cssText = `width: 100%; height: 50px; border-radius: 0.375rem; background: ${colorHex}; margin-bottom: 0.5rem; border: 2px solid var(--border-subtle); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);`;
@@ -4838,23 +4898,9 @@
         variantText.textContent = spoolVariant || "-";
         
         // Calcola residuo e percentuale
-        let fraction = 1;
-        let percentage = 100;
-        let remainingGrams = filament.unit_weight_g || 1000;
-        
-        if (isSealed) {
-          // Bobina sigillata = 100%
-          fraction = 1;
-          percentage = 100;
-          remainingGrams = filament.unit_weight_g || 1000;
-        } else if (filament.open_spools_fractions && Array.isArray(filament.open_spools_fractions)) {
-          const openIndex = spoolIndex - (filament.sealed_spools || 0);
-          if (openIndex >= 0 && openIndex < filament.open_spools_fractions.length) {
-            fraction = filament.open_spools_fractions[openIndex] || 1;
-            percentage = Math.round(fraction * 100);
-            remainingGrams = Math.round((filament.unit_weight_g || 1000) * fraction);
-          }
-        }
+        const fraction = spool.fraction;
+        const percentage = Math.round(fraction * 100);
+        const remainingGrams = Math.round(filament.unit_weight_g * fraction);
         
         // Indicatore visivo del residuo - barra di progresso
         const progressContainer = document.createElement("div");
@@ -5246,13 +5292,13 @@
   }
 
   // --- Edit Filament Modal Functions ---
-  function openEditFilamentModal(filamentId) {
+  function openEditFilamentModal(filamentId, selectedSpoolId = null) {
     const original = filaments.find(f => f.id === filamentId);
     if (!original) return;
     const draft = JSON.parse(JSON.stringify(original));
     recalcWeightsForFilament(draft);
     const session = { id: filamentId, original: JSON.parse(JSON.stringify(draft)), draft,
-      spools: getActiveFilamentSpools(draft), removed: [], explicitFinished: 0, initialFinished: draft.finished_spools };
+      spools: getActiveFilamentSpools(draft), removed: [], explicitFinished: 0, initialFinished: draft.finished_spools, selectedSpoolId };
     const originalIds = new Set(session.spools.map(spool => spool.id));
     let refreshSpoolRows = () => {};
     const applyGlobalColor = value => {
@@ -5321,8 +5367,9 @@
           const row = document.createElement("div");
           row.style.cssText = "display:flex;flex-wrap:wrap;gap:.5rem;padding:.5rem;background:var(--surface-soft);border-radius:.25rem";
           row.dataset.spoolId = spool.id;
+          if (spool.id === session.selectedSpoolId) row.classList.add("selected-spool-row");
           const title = document.createElement("span");
-          title.textContent = `Bobina ${isSealed ? "sigillata" : "aperta"} ${index + 1}`;
+          title.textContent = `Bobina ${isSealed ? "sigillata" : "aperta"} ${index + 1}${spool.id === session.selectedSpoolId ? " · selezionata dalla vista posizioni" : ""}`;
           title.style.width = "100%";
           row.appendChild(title);
           const makeLabel = text => {
@@ -5359,7 +5406,21 @@
             option.textContent = value || "Nessuna posizione"; location.appendChild(option);
           });
           location.value = spool.location;
-          location.addEventListener("change", () => { spool.location = location.value; syncBuffer(); });
+          location.addEventListener("change", () => {
+            const previousLocation = spool.location;
+            spool.location = location.value;
+            try {
+              const candidate = JSON.parse(JSON.stringify(draft));
+              setActiveFilamentSpools(candidate, session.spools);
+              recalcWeightsForFilament(candidate);
+              assertAmsCapacityTransition(filaments, filaments.map(f => f.id === session.id ? candidate : f));
+              syncBuffer();
+            } catch (error) {
+              spool.location = previousLocation;
+              location.value = previousLocation;
+              showToast(error.message, "error");
+            }
+          });
           makeLabel("Posizione").appendChild(location);
           const colorContainer = document.createElement("div");
           colorContainer.id = `edit-spool-color-${spool.id}`;
@@ -5416,6 +5477,12 @@
     renderSpools();
     updateEditColorPreview();
     openModalCentered("editFilamentModal");
+    if (selectedSpoolId) setTimeout(() => {
+      if (window.filamentEditSession !== session) return;
+      const selectedRow = document.querySelector("#editFilamentModal .selected-spool-row");
+      selectedRow?.scrollIntoView({ block: "nearest", behavior: "auto" });
+      selectedRow?.querySelector('select[data-field-type="location"]')?.focus({ preventScroll: true });
+    }, 0);
   }
 
   function updateEditRemainingGrams() {
@@ -5668,8 +5735,12 @@
     updateHistoryUI();
   }
 
-  function commitReplacementState(candidate, actionDescription, keepUndo = true) {
+  function commitReplacementState(candidate, actionDescription, keepUndo = true, restoreAmsConflicts = false) {
     const previous = captureStateSnapshot(true);
+    if (!restoreAmsConflicts) {
+      try { assertAmsCapacityTransition(previous.filaments, candidate.filaments); }
+      catch (error) { showToast("Ripristino non applicato: " + error.message, "error"); return false; }
+    }
     const previousReady = stateReady;
     const previousBlocked = storageWriteBlocked;
     const previousReason = storageBlockReason;
@@ -5766,15 +5837,17 @@
     if (isBackup) {
       const candidate = validateStateCandidate(data);
       const warning = storageWriteBlocked ? " Il registro locale è bloccato: verrà conservata una copia dell'originale." : "";
-      if (!window.confirm("Ripristinare questo backup sostituendo inventario, acquisti, consumi e impostazioni correnti?" + warning)) return false;
-      if (!commitReplacementState(candidate, "Ripristino backup")) return false;
+      const capacityConflicts = getAmsCapacityConflicts(candidate.filaments);
+      const capacityWarning = capacityConflicts.length ? "\n\nATTENZIONE: " + getAmsCapacityMessage(capacityConflicts) + " Il backup sarà conservato integralmente: correggi le posizioni dopo il ripristino, nessuna bobina verrà spostata automaticamente." : "";
+      if (!window.confirm("Ripristinare questo backup sostituendo inventario, acquisti, consumi e impostazioni correnti?" + warning + capacityWarning)) return false;
+      if (!commitReplacementState(candidate, "Ripristino backup", true, true)) return false;
       pendingPurchasedTransfer = null;
       currentSearch = "";
       const search = document.getElementById("stockSearchInput");
       if (search) search.value = "";
       refreshStateViews();
       const legacyInfo = data.schemaVersion === undefined ? " Il formato precedente non include eventuali consumi o impostazioni mancanti." : "";
-      showToast("Backup ripristinato: " + candidate.filaments.length + " filamenti e " + candidate.purchasedFilaments.length + " acquisti." + legacyInfo, "success");
+      showToast("Backup ripristinato: " + candidate.filaments.length + " filamenti e " + candidate.purchasedFilaments.length + " acquisti." + legacyInfo + (capacityConflicts.length ? " Posizioni AMS oltre capacità: correggile nella vista magazzino." : ""), capacityConflicts.length ? "warning" : "success");
       return true;
     }
     if (data.file_type === "invoices_import" || Array.isArray(data.orders) || Array.isArray(data.invoices)) {

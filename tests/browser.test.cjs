@@ -21,6 +21,13 @@ const spool = (extra = {}) => ({
 const seed = (filaments = [spool()], purchasedFilaments = []) => ({
   filaments, purchasedFilaments, brands: ["Bambu Lab"], materials: ["PLA"], colors: ["Nero", "Rosso"],
 });
+const locatedSpool = (id, location, extra = {}) => spool({ id, spools_ids: [id + "-bobina"],
+  spools_locations: [location], location, ...extra });
+const fullAms = () => seed([
+  locatedSpool("ht", "AMS HT"),
+  ...Array.from({ length: 4 }, (_, i) => locatedSpool("pro" + i, "AMS/H2D")),
+  locatedSpool("scorta", "Scaffale Top"),
+]);
 let server, browser, origin;
 
 before(async () => {
@@ -66,7 +73,96 @@ async function withPage(data, callback) {
 test("Avvio locale file:// e versione del codice distinta dai dati", async () => {
   await withPage(null, async page => {
     await page.goto(`file:///${path.join(root, "index.html").replaceAll("\\", "/")}`);
-    assert.equal(await page.evaluate(() => APP_VERSION), "V.104");
+    assert.equal(await page.evaluate(() => APP_VERSION), "V.105");
+  });
+});
+
+test("AMS: la scheda evidenzia e apre la posizione della bobina cliccata", async () => {
+  const item = spool({ id: "nero", sealed_spools: 1, open_spools: 1, spools_total: 2,
+    spools_ids: ["nero-scaffale", "nero-ams"], spools_locations: ["Scaffale Top", "AMS/H2D"],
+    spools_variants: ["Nero", "Nero"], open_spools_fractions: [.1], remaining_weight_g: 1100, total_weight_g: 2000 });
+  await withPage(seed([item]), async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="nero-ams"]').click();
+    const selected = page.locator("#editFilamentModal .selected-spool-row");
+    assert.equal(await selected.getAttribute("data-spool-id"), "nero-ams");
+    assert.equal(await selected.locator('select[data-field-type="location"]').inputValue(), "AMS/H2D");
+    assert.equal(await selected.locator('select[data-field-type="fraction"]').inputValue(), "0.1");
+    await page.locator("#editModalCancelButton").click();
+    assert.equal(await page.evaluate(() => filaments[0].remaining_weight_g), 1100);
+  });
+});
+
+test("AMS: editor blocca HT pieno e quinto Pro, poi consente una sostituzione", async () => {
+  await withPage(fullAms(), async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
+    const position = page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]');
+    await position.selectOption("AMS HT");
+    assert.equal(await position.inputValue(), "Scaffale Top");
+    assert.match(await page.locator("#toastContainer").innerText(), /Sposta prima una bobina/);
+    await position.selectOption("AMS/H2D");
+    assert.equal(await position.inputValue(), "Scaffale Top");
+    await page.locator("#editModalCancelButton").click();
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-bobina"]').click();
+    await position.selectOption("Scaffale Top");
+    await page.locator("#editModalConfirmButton").click();
+    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
+    await position.selectOption("AMS HT");
+    await page.locator("#editModalConfirmButton").click();
+    const occupants = await page.evaluate(() => getAmsOccupancy().map(unit => ({ key: unit.key, count: unit.count })));
+    assert.deepEqual(occupants, [{ key: "ams-pro", count: 4 }, { key: "ams-ht", count: 1 }]);
+    assert.equal(await page.evaluate(() => filaments.find(f => f.id === "scorta").spools_locations[0]), "AMS HT");
+  });
+});
+
+test("AMS: aggiunta manuale non supera la capacità e conserva il modulo", async () => {
+  await withPage(fullAms(), async page => {
+    const before = await page.evaluate(() => JSON.stringify(captureStateSnapshot(true)));
+    await page.locator("#addBrandSelect").selectOption("Bambu Lab");
+    await page.locator("#addMaterialSelect").selectOption("PLA");
+    await page.evaluate(() => window.addColorDropdown.setValue("Rosso"));
+    await page.locator("#addOpenSpoolsInput").fill("1");
+    await page.locator("#addSpoolLocation_0").selectOption("AMS HT");
+    await page.locator("#addFilamentButton").click();
+    assert.match(await page.locator("#toastContainer").innerText(), /Capacità AMS superata/);
+    assert.equal(await page.evaluate(() => JSON.stringify(captureStateSnapshot(true))), before);
+    assert.equal(await page.locator("#addOpenSpoolsInput").inputValue(), "1");
+  });
+});
+
+test("AMS: conflitti legacy visibili, correzione consentita e undo del sovraccarico bloccato", async () => {
+  const data = fullAms();
+  data.filaments.push(locatedSpool("ht-extra", "AMS HT"), locatedSpool("pro-extra", "AMS Pro"));
+  await withPage(data, async page => {
+    assert.equal(await page.locator(".ams-capacity-warning").count(), 2);
+    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"] [data-spool-id]').count(), 2);
+    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-pro"] [data-spool-id]').count(), 5);
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-extra-bobina"]').click();
+    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("Scaffale Top");
+    await page.locator("#editModalConfirmButton").click();
+    assert.equal(await page.locator(".ams-capacity-warning").count(), 1);
+    const beforeUndo = await page.evaluate(() => JSON.stringify(captureStateSnapshot(true)));
+    assert.equal(await page.evaluate(() => undoAction()), false);
+    assert.equal(await page.evaluate(() => JSON.stringify(captureStateSnapshot(true))), beforeUndo);
+    await page.locator('#storageVisualizationContainer [data-spool-id="pro-extra-bobina"]').click();
+    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("Scaffale Top");
+    await page.locator("#editModalConfirmButton").click();
+    assert.equal(await page.locator(".ams-capacity-warning").count(), 0);
+    assert.equal(await page.locator('#storageVisualizationContainer [data-spool-id]').count(), 8);
+  });
+});
+
+test("AMS: ripristino backup sovraccarico avvisa e conserva tutte le bobine", async () => {
+  await withPage(null, async page => {
+    const messages = [];
+    page.removeAllListeners("dialog");
+    page.on("dialog", async dialog => { messages.push(dialog.message()); await dialog.accept(); });
+    const data = seed([locatedSpool("ht1", "AMS HT"), locatedSpool("ht2", "AMS HT")]);
+    await page.locator("#importJsonInput").setInputFiles({ name: "backup-ams-test.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
+    await page.waitForFunction(() => filaments.length === 2);
+    assert.ok(messages.some(message => /massimo 1/.test(message) && /integralmente/.test(message)));
+    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"] [data-spool-id]').count(), 2);
+    assert.equal(await page.locator(".ams-capacity-warning").count(), 1);
+    assert.equal(await page.evaluate(() => filaments.reduce((sum, f) => sum + f.remaining_weight_g, 0)), 2000);
   });
 });
 
