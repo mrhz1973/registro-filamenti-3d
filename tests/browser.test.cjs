@@ -73,7 +73,101 @@ async function withPage(data, callback) {
 test("Avvio locale file:// e versione del codice distinta dai dati", async () => {
   await withPage(null, async page => {
     await page.goto(`file:///${path.join(root, "index.html").replaceAll("\\", "/")}`);
-    assert.equal(await page.evaluate(() => APP_VERSION), "V.107");
+    assert.equal(await page.evaluate(() => APP_VERSION), "V.108");
+  });
+});
+
+const openingData = (alreadyOpen = 1) => seed([spool({ id: "opening", variant: "Nero", color_code: "10101",
+  spool_state_version: 1, sealed_spools: 2, open_spools: alreadyOpen, finished_spools: 1, spools_total: 3 + alreadyOpen,
+  total_weight_g: (3 + alreadyOpen) * 1000, remaining_weight_g: 2000 + alreadyOpen * 500,
+  used_weight_g: 1000 + alreadyOpen * 500, open_spools_fractions: alreadyOpen ? [.5] : [],
+  spools_ids: ["ht-sealed", "shelf-sealed", "old-open"].slice(0, 2 + alreadyOpen),
+  spools_locations: ["AMS HT", "Scaffale Top", "Scaffale Medio"].slice(0, 2 + alreadyOpen),
+  spools_variants: ["Nero", "Rosso", "Bianco"].slice(0, 2 + alreadyOpen) })]);
+
+async function assertOpenedInventory(page, alreadyOpen = 1) {
+  assert.deepEqual(await page.evaluate(() => {
+    const f = filaments[0]; const selected = getActiveFilamentSpools(f).find(spool => spool.id === "ht-sealed");
+    return { sealed: f.sealed_spools, open: f.open_spools, active: f.spools_ids.length, total: f.spools_total,
+      finished: f.finished_spools, totalGrams: f.total_weight_g, grams: f.remaining_weight_g, variant: f.variant,
+      selected: { id: selected.id, sealed: selected.sealed, location: selected.location, variant: selected.variant, fraction: selected.fraction },
+      history: consumptionHistory.length };
+  }), { sealed: 1, open: 1 + alreadyOpen, active: 2 + alreadyOpen, total: 3 + alreadyOpen, finished: 1,
+    totalGrams: (3 + alreadyOpen) * 1000, grams: 2000 + alreadyOpen * 500, variant: "Nero",
+    selected: { id: "ht-sealed", sealed: false, location: "AMS HT", variant: "Nero", fraction: 1 }, history: 0 });
+  assert.match(await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').innerText(), /APERTA/);
+  assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"] [data-spool-id]').count(), 1);
+}
+
+test("Da due sigillate a una sigillata e una aperta: il totale resta due", async () => {
+  await withPage(openingData(0), async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').click();
+    await page.locator("#editSpoolsOpen").fill("1"); await page.locator("#editSpoolsOpen").press("Tab");
+    assert.equal(await page.locator("#editSpoolsSealed").inputValue(), "1");
+    assert.equal(await page.locator("#editSpoolsTotal").inputValue(), "2");
+    await page.locator("#editModalConfirmButton").click(); await assertOpenedInventory(page, 0);
+    await page.reload(); await assertOpenedInventory(page, 0);
+  });
+});
+
+test("Apri bobina HT: meno una sigillata, più una aperta, stessi totali e grammi anche dopo ricarica", async () => {
+  await withPage(openingData(), async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').click();
+    await page.locator('button[data-action="open-spool"][data-spool-id="ht-sealed"]').click();
+    assert.equal(await page.locator("#editSpoolsSealed").inputValue(), "1");
+    assert.equal(await page.locator("#editSpoolsOpen").inputValue(), "2");
+    assert.equal(await page.locator("#editSpoolsTotal").inputValue(), "3");
+    assert.equal(await page.locator('#editOpenSpoolsListContainer [data-spool-id="ht-sealed"] select[data-field-type="location"]').inputValue(), "AMS HT");
+    await page.locator("#editModalConfirmButton").click();
+    await assertOpenedInventory(page);
+    await page.reload(); await assertOpenedInventory(page);
+  });
+});
+
+test("Contatore Aperte converte la bobina selezionata e Annulla/Ripristina conservano le quantità", async () => {
+  await withPage(openingData(), async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').click();
+    await page.locator("#editSpoolsOpen").fill("2"); await page.locator("#editSpoolsOpen").press("Tab");
+    assert.equal(await page.locator("#editSpoolsSealed").inputValue(), "1");
+    assert.equal(await page.locator("#editSpoolsTotal").inputValue(), "3");
+    await page.locator("#editModalConfirmButton").click(); await assertOpenedInventory(page);
+    assert.equal(await page.evaluate(() => undoAction()), true);
+    assert.deepEqual(await page.evaluate(() => ({ sealed: filaments[0].sealed_spools, open: filaments[0].open_spools, total: filaments[0].spools_total })), { sealed: 2, open: 1, total: 4 });
+    assert.equal(await page.evaluate(() => redoAction()), true); await assertOpenedInventory(page);
+  });
+});
+
+test("Aprire e poi Annulla nel modulo non modifica inventario e consumi", async () => {
+  await withPage(openingData(), async page => {
+    const before = await page.evaluate(() => JSON.stringify(filaments));
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').click();
+    await page.locator('button[data-action="open-spool"][data-spool-id="ht-sealed"]').click();
+    await page.locator("#editModalCancelButton").click();
+    assert.equal(await page.evaluate(() => JSON.stringify(filaments)), before);
+    assert.equal(await page.evaluate(() => consumptionHistory.length), 0);
+  });
+});
+
+test("Assegnare all'HT e aprire nella stessa modifica conserva bobina e totale", async () => {
+  const data = openingData(); data.filaments[0].spools_locations[0] = "Scaffale Top";
+  data.locations = ["AMS HT", "Scaffale Top", "Scaffale Medio"];
+  await withPage(data, async page => {
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-sealed"]').click();
+    await page.locator('#editSealedSpoolsListContainer [data-spool-id="ht-sealed"] select[data-field-type="location"]').selectOption("AMS HT");
+    await page.locator('button[data-action="open-spool"][data-spool-id="ht-sealed"]').click();
+    await page.locator("#editModalConfirmButton").click(); await assertOpenedInventory(page);
+  });
+});
+
+test("Il contatore Aperte non crea bobine quando non ci sono sigillate disponibili", async () => {
+  await withPage(seed(), async page => {
+    await page.locator("#filamentTableBody button").filter({ hasText: "Modifica" }).first().click();
+    await page.locator("#editSpoolsOpen").fill("2"); await page.locator("#editSpoolsOpen").press("Tab");
+    assert.equal(await page.locator("#editSpoolsOpen").inputValue(), "1");
+    assert.match(await page.locator("#toastContainer").innerText(), /sigillate da aprire/);
+    await page.locator("#editModalConfirmButton").click();
+    assert.equal(await page.evaluate(() => filaments[0].spools_ids.length), 1);
+    assert.equal(await page.evaluate(() => filaments[0].total_weight_g), 1000);
   });
 });
 

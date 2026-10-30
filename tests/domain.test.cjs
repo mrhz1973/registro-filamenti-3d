@@ -41,6 +41,12 @@ const base = { id: "f1", brand: "Bambu Lab", material: "PLA", variant: "Bianco",
   remaining_weight_g: 1000, used_weight_g: 0, packaging_type: "spool", unit_price: 20 };
 const purchased = { id: "p1", brand: "Bambu Lab", material: "PLA", variant: "Bianco", unit_weight_g: 1000,
   quantity_spools: 2, packaging_type: "spool", unit_price: 20 };
+const openingFixture = () => ({ ...base, id: "f1", sealed_spools: 2, open_spools: 1,
+  finished_spools: 1, spools_total: 4, spool_state_version: 1, total_weight_g: 4000,
+  remaining_weight_g: 2500, used_weight_g: 1500, main_fraction: .5,
+  spools_ids: ["ht-sealed", "shelf-sealed", "old-open"],
+  spools_locations: ["AMS HT", "Scaffale Top", "Scaffale Medio"],
+  spools_variants: ["Nero", "Rosso", "Bianco"], open_spools_fractions: [.5] });
 const results = [];
 function test(name, callback) { nodeTest(name, () => { callback(); results.push({ name, passed: true }); }); }
 function editFields(e) {
@@ -49,6 +55,79 @@ function editFields(e) {
     "editSpoolFraction", "editFinishedSpools", "editRemainingGrams", "editSealedSpoolsList", "editOpenSpoolsList",
     "editSealedSpoolsListContainer", "editOpenSpoolsListContainer"].forEach(id => e.input(id));
 }
+
+test("Aprire una sigillata selezionata conserva identità e proprietà senza mutare la lista originale", () => {
+  const e = setup(); e.run(`var originalSpools=[{id:'a',sealed:true,fraction:1,location:'Scaffale',variant:'Rosso'},
+    {id:'b',sealed:true,fraction:1,location:'AMS HT',variant:'Nero'}];var openedSpools=openSealedSpools(originalSpools,1,'b');`);
+  assert.equal(e.run("openedSpools.length"), 2);
+  assert.equal(e.run("originalSpools[1].sealed"), true);
+  assert.deepEqual(e.snapshot("openedSpools[1]"), { id: "b", sealed: false, fraction: 1, location: "AMS HT", variant: "Nero" });
+  assert.equal(e.run("openedSpools[0].sealed"), true);
+  assert.throws(() => e.run("openSealedSpools(originalSpools,3)"), /sigillate/);
+});
+
+test("Aumentare Aperte converte la bobina HT e preserva totali, grammi e consumi", () => {
+  const e = setup(); editFields(e);
+  e.run(`filaments=${JSON.stringify([openingFixture()])};openEditFilamentModal('f1','ht-sealed')`);
+  e.dom.get("editSpoolsOpen").value = "2";
+  e.dom.get("editSpoolsOpen").onchange();
+  assert.equal(e.dom.get("editSpoolsSealed").value, 1);
+  assert.equal(e.dom.get("editSpoolsTotal").value, 3);
+  e.run("applyEditFilament()");
+  const f = e.snapshot("filaments[0]");
+  assert.equal(f.sealed_spools, 1); assert.equal(f.open_spools, 2);
+  assert.equal(f.spools_total, 4); assert.equal(f.finished_spools, 1);
+  assert.equal(f.total_weight_g, 4000); assert.equal(f.remaining_weight_g, 2500); assert.equal(f.used_weight_g, 1500);
+  assert.equal(f.variant, openingFixture().variant);
+  assert.equal(e.run("consumptionHistory.length"), 0);
+  assert.deepEqual(f.spools_ids.slice().sort(), ["ht-sealed", "old-open", "shelf-sealed"]);
+  const selected = e.snapshot("getActiveFilamentSpools(filaments[0]).find(spool=>spool.id==='ht-sealed')");
+  assert.equal(selected.sealed, false); assert.equal(selected.location, "AMS HT"); assert.equal(selected.variant, "Nero");
+});
+
+test("Caso due sigillate e zero aperte: apertura HT mantiene due attive e una già terminata", () => {
+  const e = setup(); editFields(e);
+  const item = { ...openingFixture(), open_spools: 0, spools_total: 3, total_weight_g: 3000,
+    remaining_weight_g: 2000, used_weight_g: 1000, main_fraction: 1, open_spools_fractions: [],
+    spools_ids: ["ht-sealed", "shelf-sealed"], spools_locations: ["AMS HT", "Scaffale Top"], spools_variants: ["Nero", "Rosso"] };
+  e.run(`filaments=${JSON.stringify([item])};openEditFilamentModal('f1','ht-sealed')`);
+  e.dom.get("editSpoolsOpen").value = "1"; e.dom.get("editSpoolsOpen").onchange();
+  assert.equal(e.dom.get("editSpoolsTotal").value, 2);
+  e.run("applyEditFilament()");
+  assert.equal(e.run("filaments[0].sealed_spools"), 1); assert.equal(e.run("filaments[0].open_spools"), 1);
+  assert.equal(e.run("filaments[0].spools_total"), 3); assert.equal(e.run("filaments[0].finished_spools"), 1);
+  assert.equal(e.run("filaments[0].remaining_weight_g"), 2000); assert.equal(e.run("filaments[0].total_weight_g"), 3000);
+  assert.equal(e.run("consumptionHistory.length"), 0);
+});
+
+test("Salva senza evento onchange applica comunque l'apertura senza creare bobine", () => {
+  const e = setup(); editFields(e);
+  e.run(`filaments=${JSON.stringify([openingFixture()])};openEditFilamentModal('f1','ht-sealed')`);
+  e.dom.get("editSpoolsOpen").value = "2"; e.run("applyEditFilament()");
+  assert.equal(e.run("filaments[0].spools_total"), 4); assert.equal(e.run("filaments[0].sealed_spools"), 1);
+  assert.equal(e.run("filaments[0].total_weight_g"), 4000);
+});
+
+test("Ridurre prima Sigillate e poi aumentare Aperte non produce una bobina finita aggiuntiva", () => {
+  const e = setup(); editFields(e);
+  e.run(`filaments=${JSON.stringify([openingFixture()])};openEditFilamentModal('f1','ht-sealed')`);
+  e.dom.get("editSpoolsSealed").value = "1"; e.dom.get("editSpoolsSealed").onchange();
+  e.dom.get("editSpoolsOpen").value = "2"; e.dom.get("editSpoolsOpen").onchange();
+  e.run("applyEditFilament()");
+  assert.equal(e.run("filaments[0].spools_total"), 4); assert.equal(e.run("filaments[0].finished_spools"), 1);
+  assert.equal(e.run("filaments[0].remaining_weight_g"), 2500); assert.equal(e.run("consumptionHistory.length"), 0);
+  assert.equal(e.run("getActiveFilamentSpools(filaments[0]).find(x=>x.id==='ht-sealed').sealed"), false);
+});
+
+test("Senza sigillate disponibili il contatore non inventa nuove bobine aperte", () => {
+  const e = setup(); editFields(e);
+  e.run(`filaments=${JSON.stringify([base])};openEditFilamentModal('f1')`);
+  e.dom.get("editSpoolsOpen").value = "2"; e.dom.get("editSpoolsOpen").onchange();
+  assert.equal(e.dom.get("editSpoolsOpen").value, 1);
+  e.run("applyEditFilament()");
+  assert.equal(e.run("filaments[0].spools_total"), 1); assert.equal(e.run("filaments[0].open_spools"), 1);
+  assert.equal(e.run("filaments[0].total_weight_g"), 1000); assert.equal(e.run("consumptionHistory.length"), 0);
+});
 test("Backup V318: 61 righe, 80 bobine, 64025 g dopo normalizzazione e secondo passaggio", () => {
   const fixturePath = process.env.APP_FIXTURE || path.join(path.dirname(sourcePath), "dati", "registro_filamenti_2026-03-12_V318.json");
   const data = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
@@ -178,8 +257,8 @@ test("Rifornimento dopo rettifica conserva i consumi pregressi",()=>{
 });
 test("Quantità temporanee annullate non creano bobine finite o consumi",()=>{
   const e=setup();editFields(e);e.run(`filaments=${JSON.stringify([base])};openEditFilamentModal('f1')`);
-  e.dom.get("editSpoolsOpen").value="2";e.run("window.filamentEditSession.syncCounts()");
-  e.dom.get("editSpoolsOpen").value="1";e.run("applyEditFilament()");
+  e.dom.get("editSpoolsSealed").value="1";e.run("window.filamentEditSession.syncCounts()");
+  e.dom.get("editSpoolsSealed").value="0";e.run("applyEditFilament()");
   assert.equal(e.run("filaments[0].finished_spools"),0);assert.equal(e.run("filaments[0].spools_total"),1);
   assert.equal(e.run("filaments[0].total_weight_g"),1000);assert.equal(e.run("consumptionHistory.length"),0);
 });

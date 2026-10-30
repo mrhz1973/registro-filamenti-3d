@@ -10,7 +10,7 @@ LEGGI PRIMA: docs/CURSOR_BRIEFING.md per architettura completa e roadmap.
 
 2. STACK: Solo vanilla HTML/CSS/JS. VIETATO introdurre framework, npm,
    build tools, bundler o dipendenze senza approvazione esplicita dell'utente.
-   Librerie via CDN solo se approvate. V.107 non carica librerie esterne.
+   Librerie via CDN solo se approvate. V.108 non carica librerie esterne.
 
 3. FILE ATTIVI: index.html, app.js, styles.css nella ROOT.
    La cartella archivio/ è SOLO storica: non usarla come riferimento,
@@ -21,7 +21,7 @@ LEGGI PRIMA: docs/CURSOR_BRIEFING.md per architettura completa e roadmap.
    senza piano approvato dall'utente.
 
 5. VERSIONING: ad ogni modifica significativa incrementa
-   const INITIAL_VERSION = "V.xxx" in app.js (attuale base: V.107).
+   const INITIAL_VERSION = "V.xxx" in app.js (attuale base: V.108).
    La revisione dati è separata; non incrementare la versione app a ogni salvataggio.
 
 6. BACKWARD COMPATIBILITY: l'import JSON deve continuare a leggere

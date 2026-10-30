@@ -7,7 +7,7 @@
   }
 
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.107";
+  const INITIAL_VERSION = "V.108";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -5453,6 +5453,17 @@
     } catch (error) { showToast(error.message, "error"); }
   }
 
+  // Cambia lo stato delle bobine esistenti senza alterare quantità o identità.
+  function openSealedSpools(spools, quantity, selectedSpoolId = null) {
+    const count = requireSpoolNumber(quantity, "Bobine da aprire", true);
+    const sealed = spools.filter(spool => spool.sealed);
+    if (count > sealed.length) throw new Error("Non ci sono abbastanza bobine sigillate da aprire. Per registrare nuove bobine usa Aggiungi filamento.");
+    const preferred = sealed.find(spool => spool.id === selectedSpoolId);
+    const ordered = preferred ? [preferred, ...sealed.filter(spool => spool.id !== preferred.id)] : sealed;
+    const opened = new Set(ordered.slice(0, count).map(spool => spool.id));
+    return spools.map(spool => opened.has(spool.id) ? { ...spool, sealed: false, fraction: 1 } : spool);
+  }
+
   // --- Edit Filament Modal Functions ---
   function openEditFilamentModal(filamentId, selectedSpoolId = null) {
     const original = filaments.find(f => f.id === filamentId);
@@ -5573,6 +5584,21 @@
           const colorContainer = document.createElement("div");
           colorContainer.id = `edit-spool-color-${spool.id}`;
           makeLabel("Colore").appendChild(colorContainer);
+          if (isSealed) {
+            const openButton = document.createElement("button");
+            openButton.type = "button";
+            openButton.className = "btn-secondary";
+            openButton.dataset.action = "open-spool";
+            openButton.dataset.spoolId = spool.id;
+            openButton.textContent = "Apri bobina";
+            openButton.addEventListener("click", () => {
+              if (!session.spools.some(item => item.id === spool.id && item.sealed)) return;
+              session.spools = openSealedSpools(session.spools, 1, spool.id);
+              session.selectedSpoolId = spool.id;
+              renderSpools();
+            });
+            row.appendChild(openButton);
+          }
           container.appendChild(row);
           let colorControl;
           colorControl = createColorDropdown(colorContainer.id, { initialValue: spool.variant, brandHint: draft.brand,
@@ -5593,9 +5619,26 @@
     };
 
     const syncCounts = () => {
-      const sealedCount = requireSpoolNumber(input("editSpoolsSealed").value, "Bobine sigillate", true);
+      let sealedCount = requireSpoolNumber(input("editSpoolsSealed").value, "Bobine sigillate", true);
       const openCount = requireSpoolNumber(input("editSpoolsOpen").value, "Bobine aperte", true);
       if (sealedCount + openCount > 10000) throw new Error("Quantità troppo elevata per la modifica individuale.");
+      const currentSealed = session.spools.filter(spool => spool.sealed).length;
+      const opening = openCount - (session.spools.length - currentSealed);
+      if (opening > 0) {
+        // Recupera anche sigillate tolte solo nel modulo, se l'utente modifica
+        // prima Sigillate e poi Aperte. Non crea identificatori nuovi.
+        const available = [...session.spools, ...session.removed.filter(spool => spool.sealed)];
+        const converted = openSealedSpools(available, opening, session.selectedSpoolId);
+        const remainingSealed = converted.filter(spool => spool.sealed);
+        if (sealedCount === currentSealed) sealedCount = Math.min(sealedCount, remainingSealed.length);
+        if (sealedCount > remainingSealed.length) throw new Error("Aprire una bobina non aumenta il totale. Per registrare nuove bobine usa Aggiungi filamento.");
+        const next = [...remainingSealed.slice(0, sealedCount), ...converted.filter(spool => !spool.sealed)];
+        const kept = new Set(next.map(spool => spool.id));
+        session.removed = [...session.spools, ...session.removed].filter(spool => !kept.has(spool.id));
+        session.spools = next;
+        renderSpools();
+        return;
+      }
       const sealed = session.spools.filter(spool => spool.sealed).slice(0, sealedCount);
       const open = session.spools.filter(spool => !spool.sealed).slice(0, openCount);
       const reserved = new Set([...sealed, ...open].map(spool => spool.id));
@@ -5619,7 +5662,7 @@
     ["editSpoolsSealed", "editSpoolsOpen"].forEach(id => {
       const element = input(id);
       if (element) element.onchange = () => {
-        try { syncCounts(); } catch (error) { showToast(error.message, "error"); }
+        try { syncCounts(); } catch (error) { syncBuffer(); showToast(error.message, "error"); }
       };
     });
     renderSpools();
@@ -5696,7 +5739,10 @@
           session.customGlobalApplied = color;
         }
       }
-      draft.variant = session.spools[0]?.variant || session.globalVariant || draft.variant;
+      const originalVariants = new Map(getActiveFilamentSpools(session.original).map(spool => [spool.id, spool.variant]));
+      const colorsChanged = session.globalVariant || session.spools.some(spool => originalVariants.get(spool.id) !== spool.variant);
+      // Il riordino sigillate/aperte non deve cambiare il colore principale.
+      draft.variant = colorsChanged ? session.spools[0]?.variant || session.globalVariant || draft.variant : draft.variant || session.spools[0]?.variant;
       if (!draft.variant || !draft.variant.trim()) throw new Error("Il colore è obbligatorio.");
       draft.color_code = value("editColorCodeInput").trim();
       draft.unit_weight_g = unit;
