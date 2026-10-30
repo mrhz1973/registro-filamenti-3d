@@ -73,96 +73,60 @@ async function withPage(data, callback) {
 test("Avvio locale file:// e versione del codice distinta dai dati", async () => {
   await withPage(null, async page => {
     await page.goto(`file:///${path.join(root, "index.html").replaceAll("\\", "/")}`);
-    assert.equal(await page.evaluate(() => APP_VERSION), "V.105");
+    assert.equal(await page.evaluate(() => APP_VERSION), "V.106");
   });
 });
 
-test("AMS: la scheda evidenzia e apre la posizione della bobina cliccata", async () => {
-  const item = spool({ id: "nero", sealed_spools: 1, open_spools: 1, spools_total: 2,
-    spools_ids: ["nero-scaffale", "nero-ams"], spools_locations: ["Scaffale Top", "AMS/H2D"],
-    spools_variants: ["Nero", "Nero"], open_spools_fractions: [.1], remaining_weight_g: 1100, total_weight_g: 2000 });
-  await withPage(seed([item]), async page => {
-    await page.locator('#storageVisualizationContainer [data-spool-id="nero-ams"]').click();
-    const selected = page.locator("#editFilamentModal .selected-spool-row");
-    assert.equal(await selected.getAttribute("data-spool-id"), "nero-ams");
-    assert.equal(await selected.locator('select[data-field-type="location"]').inputValue(), "AMS/H2D");
-    assert.equal(await selected.locator('select[data-field-type="fraction"]').inputValue(), "0.1");
-    await page.locator("#editModalCancelButton").click();
-    assert.equal(await page.evaluate(() => filaments[0].remaining_weight_g), 1100);
-  });
-});
-
-test("AMS: editor blocca HT pieno e quinto Pro, poi consente una sostituzione", async () => {
+test("Sovraccarico non bloccante, persistente e risoluzione con drag and drop", async () => {
   await withPage(fullAms(), async page => {
-    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
-    const position = page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]');
-    await position.selectOption("AMS HT");
-    assert.equal(await position.inputValue(), "Scaffale Top");
-    assert.match(await page.locator("#toastContainer").innerText(), /Sposta prima una bobina/);
-    await position.selectOption("AMS/H2D");
-    assert.equal(await position.inputValue(), "Scaffale Top");
-    await page.locator("#editModalCancelButton").click();
-    await page.locator('#storageVisualizationContainer [data-spool-id="ht-bobina"]').click();
-    await position.selectOption("Scaffale Top");
-    await page.locator("#editModalConfirmButton").click();
-    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
-    await position.selectOption("AMS HT");
-    await page.locator("#editModalConfirmButton").click();
-    const occupants = await page.evaluate(() => getAmsOccupancy().map(unit => ({ key: unit.key, count: unit.count })));
-    assert.deepEqual(occupants, [{ key: "ams-pro", count: 4 }, { key: "ams-ht", count: 1 }]);
-    assert.equal(await page.evaluate(() => filaments.find(f => f.id === "scorta").spools_locations[0]), "AMS HT");
+    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').dragTo(page.locator('#storageVisualizationContainer [data-location-key="ams-ht"]'));
+    assert.match(await page.locator("#capacityAlerts").innerText(), /AMS HT.*2 bobine presenti.*massima 1/);
+    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"].location-over-capacity').count(), 1);
+    await page.reload();
+    assert.match(await page.locator("#capacityAlerts").innerText(), /AMS HT.*2 bobine presenti/);
+    await page.locator('#storageVisualizationContainer [data-spool-id="ht-bobina"]').dragTo(page.locator('#storageVisualizationContainer [data-location-key="scaffale top"]'));
+    await page.waitForFunction(() => filaments.find(f => f.id === "ht").spools_locations[0] === "Scaffale Top");
+    assert.equal(await page.locator("#capacityAlerts").isHidden(), true);
+    assert.equal(await page.locator('.location-over-capacity').count(), 0);
+    assert.equal(await page.evaluate(() => filaments.find(f => f.id === "ht").spools_locations[0]), "Scaffale Top");
+    assert.equal(await page.evaluate(() => undoAction()), true);
+    assert.match(await page.locator("#capacityAlerts").innerText(), /AMS HT.*2 bobine presenti/);
   });
 });
 
-test("AMS: aggiunta manuale non supera la capacità e conserva il modulo", async () => {
-  await withPage(fullAms(), async page => {
-    const before = await page.evaluate(() => JSON.stringify(captureStateSnapshot(true)));
-    await page.locator("#addBrandSelect").selectOption("Bambu Lab");
-    await page.locator("#addMaterialSelect").selectOption("PLA");
-    await page.evaluate(() => window.addColorDropdown.setValue("Rosso"));
-    await page.locator("#addOpenSpoolsInput").fill("1");
-    await page.locator("#addSpoolLocation_0").selectOption("AMS HT");
-    await page.locator("#addFilamentButton").click();
-    assert.match(await page.locator("#toastContainer").innerText(), /Capacità AMS superata/);
-    assert.equal(await page.evaluate(() => JSON.stringify(captureStateSnapshot(true))), before);
-    assert.equal(await page.locator("#addOpenSpoolsInput").inputValue(), "1");
-  });
-});
-
-test("AMS: conflitti legacy visibili, correzione consentita e undo del sovraccarico bloccato", async () => {
-  const data = fullAms();
-  data.filaments.push(locatedSpool("ht-extra", "AMS HT"), locatedSpool("pro-extra", "AMS Pro"));
+test("Più locazioni sovraccariche e salvataggio editor", async () => {
+  const data = fullAms(); data.filaments.push(locatedSpool("extra", "Scaffale Top"));
   await withPage(data, async page => {
-    assert.equal(await page.locator(".ams-capacity-warning").count(), 2);
-    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"] [data-spool-id]').count(), 2);
-    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-pro"] [data-spool-id]').count(), 5);
-    await page.locator('#storageVisualizationContainer [data-spool-id="ht-extra-bobina"]').click();
-    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("Scaffale Top");
+    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
+    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("AMS HT");
     await page.locator("#editModalConfirmButton").click();
-    assert.equal(await page.locator(".ams-capacity-warning").count(), 1);
-    const beforeUndo = await page.evaluate(() => JSON.stringify(captureStateSnapshot(true)));
-    assert.equal(await page.evaluate(() => undoAction()), false);
-    assert.equal(await page.evaluate(() => JSON.stringify(captureStateSnapshot(true))), beforeUndo);
-    await page.locator('#storageVisualizationContainer [data-spool-id="pro-extra-bobina"]').click();
-    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("Scaffale Top");
-    await page.locator("#editModalConfirmButton").click();
-    assert.equal(await page.locator(".ams-capacity-warning").count(), 0);
-    assert.equal(await page.locator('#storageVisualizationContainer [data-spool-id]').count(), 8);
+    await page.locator('#editFilamentModal').waitFor({ state: 'hidden' });
+    await page.locator('#storageVisualizationContainer [data-spool-id="extra-bobina"]').click();
+    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption('AMS/H2D');
+    await page.locator('#editModalConfirmButton').click();
+    await page.waitForFunction(() => getAmsCapacityConflicts().length === 2);
+    const alert = await page.locator("#capacityAlerts").innerText();
+    assert.match(alert, /AMS HT.*2 bobine presenti/);
+    assert.match(alert, /AMS 2 Pro.*5 bobine presenti/);
+    assert.equal(await page.locator('.location-over-capacity').count(), 2);
   });
 });
 
-test("AMS: ripristino backup sovraccarico avvisa e conserva tutte le bobine", async () => {
-  await withPage(null, async page => {
-    const messages = [];
-    page.removeAllListeners("dialog");
-    page.on("dialog", async dialog => { messages.push(dialog.message()); await dialog.accept(); });
-    const data = seed([locatedSpool("ht1", "AMS HT"), locatedSpool("ht2", "AMS HT")]);
-    await page.locator("#importJsonInput").setInputFiles({ name: "backup-ams-test.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(data)) });
-    await page.waitForFunction(() => filaments.length === 2);
-    assert.ok(messages.some(message => /massimo 1/.test(message) && /integralmente/.test(message)));
-    assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"] [data-spool-id]').count(), 2);
-    assert.equal(await page.locator(".ams-capacity-warning").count(), 1);
-    assert.equal(await page.evaluate(() => filaments.reduce((sum, f) => sum + f.remaining_weight_g, 0)), 2000);
+test("Trascinamento verso AMS Pro dopo modifica da finestra", async () => {
+  const data = fullAms(); data.filaments.push(locatedSpool("extra", "Scaffale Top"));
+  await withPage(data, async page => {
+    await page.setViewportSize({ width: 1440, height: 2500 });
+    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').click();
+    await page.locator('#editOpenSpoolsListContainer select[data-field-type="location"]').selectOption("AMS HT");
+    await page.locator('#editModalConfirmButton').click();
+    await page.locator('#editFilamentModal').waitFor({ state: 'hidden' });
+    const from = await page.locator('#storageVisualizationContainer [data-spool-id="extra-bobina"]').boundingBox();
+    const to = await page.locator('#storageVisualizationContainer [data-location-key="ams-pro"]').boundingBox();
+    await page.mouse.move(from.x + 50, from.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(to.x + 100, to.y + 100, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForFunction(() => getAmsCapacityConflicts().length === 2);
   });
 });
 

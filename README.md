@@ -1,4 +1,4 @@
-# Registro Filamenti 3D — V.105
+# Registro Filamenti 3D — V.106
 
 Applicazione locale per acquisti, magazzino, bobine e consumi di filamento. Apri `index.html` nel browser: non servono installazione, server o connessione a Internet.
 
@@ -6,7 +6,7 @@ Applicazione locale per acquisti, magazzino, bobine e consumi di filamento. Apri
 
 Prima di aggiornare conserva un export JSON dal browser che contiene il tuo registro. I dati sono nel browser, **non nella cartella dell'app né su GitHub**. Cambiare browser, profilo, percorso `file://` o indirizzo di un server locale può mostrare un registro diverso o vuoto: in quel caso importa il backup, senza cancellare quello precedente.
 
-V.105 legge i backup precedenti, incluso il formato V318. Il salvataggio usa ancora la chiave `registroFilamentiState_v3`, con un formato interno identificato da `schemaVersion: 4`. La versione dell'app resta V.105; la revisione dei dati aumenta separatamente.
+V.106 legge i backup precedenti, incluso il formato V318. Il salvataggio usa ancora la chiave `registroFilamentiState_v3`, con un formato interno identificato da `schemaVersion: 4`. La versione dell'app resta V.106; la revisione dei dati aumenta separatamente.
 
 - **Esporta JSON** crea una copia dello stato corrente, comprendendo inventario, acquisti, consumi, cataloghi, posizioni e impostazioni. La cronologia di annullamento rimane nel browser e non gonfia il file di backup.
 - **Ripristina backup** sostituisce l'intero registro dopo validazione e conferma. Accetta anche un inventario vuoto. Un file non valido non modifica lo stato.
@@ -19,8 +19,8 @@ V.105 legge i backup precedenti, incluso il formato V318. Il salvataggio usa anc
 - Dashboard, ricerca, filtri e ordinamento del magazzino.
 - Inserimento manuale e importazione di fatture JSON.
 - Bobine sigillate, aperte e finite; colore, posizione e residuo individuali.
-- AMS HT con massimo una bobina e AMS 2 Pro con massimo quattro per unità. Una nuova assegnazione oltre capacità viene bloccata: sposta prima una bobina già presente. Gli alias AMS/H2D, AMS Pro e AMS 2 Pro indicano la stessa unità; i nomi numerati distinguono unità diverse.
-- Le schede della vista posizioni aprono ed evidenziano la bobina cliccata. I vecchi conflitti di capacità vengono segnalati senza cancellare o spostare dati; il ripristino di un backup in conflitto richiede una conferma esplicita.
+- AMS HT prevede una bobina e AMS 2 Pro quattro per unità. Gli alias AMS/H2D, AMS Pro e AMS 2 Pro indicano la stessa unità; i nomi numerati distinguono unità diverse. Se si supera la capacità, il salvataggio resta possibile e un avviso rosso persistente mostra numero presente e capacità.
+- Le schede della vista posizioni aprono ed evidenziano la bobina cliccata. Si possono trascinare le bobine fra le posizioni, comprese quelle vuote già presenti nell'elenco; lo spostamento è annullabile.
 - Trasferimenti dagli acquisti al magazzino senza creare falsi consumi.
 - Storico consumi, grafici SVG e bilancio delle quantità.
 - Annulla/Ripristina delle operazioni con dati e storico coerenti.
