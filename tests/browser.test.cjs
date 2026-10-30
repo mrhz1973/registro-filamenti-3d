@@ -73,18 +73,126 @@ async function withPage(data, callback) {
 test("Avvio locale file:// e versione del codice distinta dai dati", async () => {
   await withPage(null, async page => {
     await page.goto(`file:///${path.join(root, "index.html").replaceAll("\\", "/")}`);
-    assert.equal(await page.evaluate(() => APP_VERSION), "V.106");
+    assert.equal(await page.evaluate(() => APP_VERSION), "V.107");
   });
 });
 
+test("Bambu: nome e colore ufficiali in lista, ricerca e vista posizioni senza modificare il backup", async () => {
+  const item = spool({ variant: "10102", color_code: "10102", spools_variants: ["10102"] });
+  await withPage(seed([item]), async page => {
+    const pill = page.locator("#filamentTableBody .pill-colored").first();
+    assert.match(await pill.innerText(), /Argento \(10102\)/);
+    assert.match(await pill.getAttribute("style"), /#A6A9AAFF/);
+    assert.match(await page.locator('#storageVisualizationContainer [data-spool-id]').first().innerText(), /Argento \(10102\)/);
+    if (process.env.V107_SHOTS) await page.locator("#filamentTableBody").screenshot({ path: path.join(process.env.V107_SHOTS, "bambu-names.png") });
+    await page.locator("#stockSearchInput").fill("Argento");
+    assert.equal(await page.locator("#filamentTableBody .filament-select-checkbox").count(), 1);
+    assert.equal(await page.evaluate(() => filaments[0].variant), "10102");
+    assert.equal(await page.evaluate(() => filaments[0].color_code), "10102");
+  });
+});
+
+test("Catalogo: cerca nome commerciale inglese e scegli codice con nome italiano", async () => {
+  await withPage(seed(), async page => {
+    await page.locator("#addBrandSelect").selectOption("Bambu Lab");
+    await page.locator("#addMaterialSelect").selectOption("PLA");
+    await page.locator("#addColorDropdownContainer .color-dropdown-trigger").click();
+    await page.locator('#floating-layer input[aria-label="Cerca colore"]').fill("Maroon");
+    const choice = page.locator('#floating-layer .color-dropdown-option[data-value="10205"]');
+    assert.match(await choice.innerText(), /Rosso bordeaux/);
+    await choice.click();
+    assert.match(await page.locator("#addColorDropdownContainer .color-text").innerText(), /Rosso bordeaux \(10205\)/);
+  });
+});
+
+async function installBackupTestFolder(page) {
+  // Cartella privata del profilo temporaneo: nessun file personale del PC.
+  await page.addInitScript(() => {
+    window.showDirectoryPicker = async () => {
+      const root = await navigator.storage.getDirectory();
+      return root.getDirectoryHandle("backup-prova", { create: true });
+    };
+  });
+  await page.reload();
+}
+
+test("Backup JSON reale nel profilo temporaneo: scrittura, riapertura e disattivazione", async () => {
+  await withPage(seed(), async page => {
+    await installBackupTestFolder(page);
+    await page.locator("#chooseBackupDirectory").click();
+    await page.waitForFunction(() => document.getElementById("fileBackupStatus").textContent.includes("Ultimo JSON:"));
+    const readLatest = () => page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory(); const folder = await root.getDirectoryHandle("backup-prova");
+      const file = await (await folder.getFileHandle("registro_filamenti_ultimo_backup.json")).getFile();
+      return JSON.parse(await file.text());
+    });
+    const data = await readLatest();
+    if (process.env.V107_SHOTS) await page.locator(".file-backup-panel").screenshot({ path: path.join(process.env.V107_SHOTS, "backup-status.png") });
+    assert.equal(data.filaments[0].remaining_weight_g, 1000); assert.equal(data.file_type, "database_backup");
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById("fileBackupStatus").textContent.includes("Ultimo JSON:"));
+    await page.locator("#disableFileBackup").click();
+    await page.waitForFunction(() => document.getElementById("fileBackupStatus").textContent.includes("disattivati"));
+    assert.equal((await readLatest()).filaments[0].remaining_weight_g, 1000);
+    await page.reload();
+    assert.match(await page.locator("#fileBackupStatus").innerText(), /Non configurati/);
+  });
+});
+
+test("Backup: il timer di cinque minuti salva l'ultima modifica e il file si ripristina", async () => {
+  await withPage(seed(), async page => {
+    await page.clock.install();
+    await installBackupTestFolder(page);
+    await page.locator("#chooseBackupDirectory").click();
+    await page.waitForFunction(() => document.getElementById("fileBackupStatus").textContent.includes("Ultimo JSON:"));
+    await page.evaluate(() => commitMutation("Modifica prova", () => { filaments[0].notes = "modifica prima del backup"; }));
+    await page.clock.fastForward(300000);
+    await page.waitForFunction(async () => {
+      const root = await navigator.storage.getDirectory(); const folder = await root.getDirectoryHandle("backup-prova");
+      const file = await (await folder.getFileHandle("registro_filamenti_ultimo_backup.json")).getFile();
+      return JSON.parse(await file.text()).filaments[0].notes === "modifica prima del backup";
+    });
+    assert.equal(await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory(); const folder = await root.getDirectoryHandle("backup-prova");
+      const file = await (await folder.getFileHandle("registro_filamenti_ultimo_backup.json")).getFile();
+      return validateStateCandidate(JSON.parse(await file.text())).filaments[0].notes;
+    }), "modifica prima del backup");
+  });
+});
+
+test("Backup: permesso negato segnalato e salvataggio browser ancora funzionante", async () => {
+  await withPage(seed(), async page => {
+    await page.evaluate(() => { fileBackupDirectory = { name: "revocata", queryPermission: async () => "denied" }; });
+    await page.locator("#backupNowButton").click();
+    await page.waitForFunction(() => document.getElementById("fileBackupStatus").textContent.includes("non riuscito"));
+    assert.match(await page.locator("#fileBackupStatus").innerText(), /Autorizza/);
+    assert.equal(await page.evaluate(() => commitMutation("nota", () => { filaments[0].notes = "salvata"; })), true);
+    await page.reload();
+    assert.equal(await page.evaluate(() => filaments[0].notes), "salvata");
+  });
+});
+
+async function dragSpoolWithMouse(page, spoolId, locationKey) {
+  const source = page.locator(`#storageVisualizationContainer [data-spool-id="${spoolId}"]`);
+  const target = page.locator(`#storageVisualizationContainer [data-location-key="${locationKey}"]`);
+  await source.scrollIntoViewIfNeeded();
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  await page.mouse.move(from.x + 50, from.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 100, to.y + 100, { steps: 20 });
+  await page.mouse.up();
+}
+
 test("Sovraccarico non bloccante, persistente e risoluzione con drag and drop", async () => {
   await withPage(fullAms(), async page => {
-    await page.locator('#storageVisualizationContainer [data-spool-id="scorta-bobina"]').dragTo(page.locator('#storageVisualizationContainer [data-location-key="ams-ht"]'));
+    await page.setViewportSize({ width: 1440, height: 2500 });
+    await dragSpoolWithMouse(page, "scorta-bobina", "ams-ht");
     assert.match(await page.locator("#capacityAlerts").innerText(), /AMS HT.*2 bobine presenti.*massima 1/);
     assert.equal(await page.locator('#storageVisualizationContainer [data-location-key="ams-ht"].location-over-capacity').count(), 1);
     await page.reload();
     assert.match(await page.locator("#capacityAlerts").innerText(), /AMS HT.*2 bobine presenti/);
-    await page.locator('#storageVisualizationContainer [data-spool-id="ht-bobina"]').dragTo(page.locator('#storageVisualizationContainer [data-location-key="scaffale top"]'));
+    await dragSpoolWithMouse(page, "ht-bobina", "scaffale top");
     await page.waitForFunction(() => filaments.find(f => f.id === "ht").spools_locations[0] === "Scaffale Top");
     assert.equal(await page.locator("#capacityAlerts").isHidden(), true);
     assert.equal(await page.locator('.location-over-capacity').count(), 0);
