@@ -109,9 +109,9 @@ test("Magazzino: alias Pro riuniti e vecchio eccesso segnalato senza nascondere 
   const before = t.snapshot("filaments");
   t.run("renderStorageVisualization()");
   const group = t.group("AMS/H2D");
-  assert.equal(t.container.children.length, 1); assert.equal(t.cards(group).length, 5);
+  assert.equal(t.cards(group).length, 5);
   assert.match(t.text(group), /5 \/ 4 posti/);
-  assert.match(t.text(group), /1 bobina in più/);
+  assert.match(t.text(group), /sovraccarica/);
   assert.deepEqual(t.snapshot("filaments"), before);
 });
 
@@ -123,7 +123,7 @@ test("Magazzino: due bobine HT restano recuperabili e richiedono correzione", ()
   t.run("renderStorageVisualization()");
   const group = t.group("AMS HT");
   assert.equal(t.cards(group).length, 2); assert.match(t.text(group), /2 \/ 1 posti/);
-  assert.match(t.text(group), /1 bobina in più/);
+  assert.match(t.text(group), /sovraccarica/);
 });
 
 test("Backup V318: AMS Pro 4, HT 1, nessuna PLA Nero sigillata nell'AMS", () => {

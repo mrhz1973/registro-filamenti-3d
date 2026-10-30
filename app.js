@@ -7,7 +7,7 @@
   }
 
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.105";
+  const INITIAL_VERSION = "V.106";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -1070,15 +1070,6 @@
   }
 
   function commitDomainState(previous) {
-    try {
-      assertAmsCapacityTransition(previous.filaments, filaments);
-    } catch (error) {
-      applyStateSnapshot(previous, true);
-      renderAll();
-      updateHistoryUI();
-      showToast(error.message, "error");
-      return false;
-    }
     if (saveState(true) !== false) return true;
     if (typeof applyStateSnapshot === "function") applyStateSnapshot(previous, true);
     else {
@@ -1221,18 +1212,7 @@
 
   function getAmsCapacityMessage(conflicts) {
     const details = conflicts.map(unit => `${unit.label}: ${unit.count} bobine assegnate, massimo ${unit.capacity}`).join("; ");
-    return `Capacità AMS superata (${details}). Sposta prima una bobina già presente in un'altra posizione, poi assegna la nuova bobina.`;
-  }
-
-  function assertAmsCapacityTransition(beforeFilaments, afterFilaments) {
-    const previous = new Map(getAmsOccupancy(beforeFilaments).map(unit => [unit.key, new Set(unit.spoolIds)]));
-    // Le vecchie assegnazioni in conflitto restano recuperabili: sono consentite solo
-    // modifiche innocue o rimozioni finché l'unità non rientra nella sua capacità.
-    const introduced = getAmsCapacityConflicts(afterFilaments).filter(unit => {
-      const existing = previous.get(unit.key) || new Set();
-      return unit.spoolIds.some(id => !existing.has(id));
-    });
-    if (introduced.length) throw new Error(getAmsCapacityMessage(introduced));
+    return `Attenzione: locazioni sovraccariche (${details}).`;
   }
 
   function setActiveFilamentSpools(f, spools) {
@@ -2311,7 +2291,7 @@
       saveStateForUndo(actionDescription);
       mutate();
       const candidate = validateStateCandidate(captureStateSnapshot(true));
-      assertAmsCapacityTransition(before.filaments, candidate.filaments);
+
       applyStateSnapshot(candidate, true);
       if (!saveState()) { applyStateSnapshot(before, true); updateHistoryUI(); return false; }
       updateHistoryUI();
@@ -2531,7 +2511,7 @@
     let candidate;
     try {
       candidate = validateStateCandidate(undoStack[undoStack.length - 1], false);
-      assertAmsCapacityTransition(before.filaments, candidate.filaments);
+
     } catch (error) { showToast("Annullamento non applicato: " + error.message, "error"); return false; }
     const previous = undoStack.pop();
     redoStack.push({ ...captureStateSnapshot(), actionDescription: previous.actionDescription, timestamp: new Date().toISOString() });
@@ -2552,7 +2532,7 @@
     let candidate;
     try {
       candidate = validateStateCandidate(redoStack[redoStack.length - 1], false);
-      assertAmsCapacityTransition(before.filaments, candidate.filaments);
+
     } catch (error) { showToast("Ripristino non applicato: " + error.message, "error"); return false; }
     const next = redoStack.pop();
     undoStack.push({ ...captureStateSnapshot(), actionDescription: next.actionDescription, timestamp: new Date().toISOString() });
@@ -2684,7 +2664,7 @@
     let candidate;
     try {
       candidate = validateStateCandidate(target, false);
-      assertAmsCapacityTransition(previous.filaments, candidate.filaments);
+
     } catch (error) { showToast("Ripristino cronologia non applicato: " + error.message, "error"); return false; }
     redoStack.push({ ...captureStateSnapshot(), actionDescription: target.actionDescription, timestamp: new Date().toISOString() });
     undoStack = undoStack.slice(0, targetIndex);
@@ -4683,6 +4663,22 @@
 
   // Stato di ordinamento per barra residua aggregata
   let remainingBarSortState = { field: "remaining_ratio", direction: "asc" };
+  let draggedSpool = null;
+
+  function moveSpoolToLocation(filamentId, spoolId, destination) {
+    const filament = filaments.find(f => f.id === filamentId);
+    const spool = filament && getActiveFilamentSpools(filament).find(item => item.id === spoolId);
+    if (!spool || !destination || normalizeStorageLocation(spool.location) === normalizeStorageLocation(destination)) return false;
+    if (!commitMutation(`Spostata bobina in ${destination}`, () => {
+      const items = getActiveFilamentSpools(filament);
+      items.find(item => item.id === spoolId).location = destination;
+      setActiveFilamentSpools(filament, items);
+      recalcWeightsForFilament(filament);
+    })) return false;
+    renderAll();
+    showToast(`Bobina spostata in ${destination}.`, "success");
+    return true;
+  }
 
 
   function renderStorageVisualization() {
@@ -4705,6 +4701,10 @@
         }
         locationsMap.get(normalized).spools.push({ filament: f, spool, isSealed: spool.sealed });
       });
+    });
+    locationList.forEach(location => {
+      const normalized = normalizeStorageLocation(location);
+      if (normalized && !locationsMap.has(normalized)) locationsMap.set(normalized, { originalName: location.trim(), spools: [] });
     });
     
     // Se non ci sono posizioni, mostra un messaggio
@@ -4735,6 +4735,20 @@
       
       const locationCard = document.createElement("div");
       locationCard.dataset.locationKey = normalized;
+      locationCard.addEventListener("dragover", event => {
+        if (!draggedSpool) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        locationCard.classList.add("location-drop-target");
+      });
+      locationCard.addEventListener("dragleave", () => locationCard.classList.remove("location-drop-target"));
+      locationCard.addEventListener("drop", event => {
+        event.preventDefault();
+        locationCard.classList.remove("location-drop-target");
+        const selected = draggedSpool;
+        draggedSpool = null;
+        if (selected) moveSpoolToLocation(selected.filamentId, selected.spoolId, location);
+      });
       locationCard.style.cssText = "background: var(--surface-soft); border-radius: 0.75rem; padding: 1rem; border: 2px solid var(--border-subtle); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); position: relative; overflow: hidden;";
       
       // Aggiungi un effetto "box" con bordi interni
@@ -4822,8 +4836,8 @@
         const warning = document.createElement("div");
         warning.className = "ams-capacity-warning";
         warning.setAttribute("role", "status");
-        const excess = spools.length - amsInfo.capacity;
-        warning.textContent = `Posizioni da correggere: ${excess} bobin${excess === 1 ? "a" : "e"} in più. Clicca una bobina e spostala in un'altra posizione. Non puoi aggiungerne altre finché non liberi un posto.`;
+        locationCard.classList.add("location-over-capacity");
+        warning.textContent = `Attenzione: locazione ${amsInfo.label} sovraccarica — ${spools.length} bobine presenti, capacità massima ${amsInfo.capacity}.`;
         locationCard.appendChild(warning);
       }
       
@@ -4835,6 +4849,13 @@
         const spoolCard = document.createElement("div");
         spoolCard.dataset.spoolId = spool.id;
         spoolCard.dataset.filamentId = filament.id;
+        spoolCard.draggable = true;
+        spoolCard.addEventListener("dragstart", event => {
+          draggedSpool = { filamentId: filament.id, spoolId: spool.id };
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", spool.id);
+        });
+        spoolCard.addEventListener("dragend", () => { draggedSpool = null; });
         spoolCard.setAttribute("role", "button");
         spoolCard.tabIndex = 0;
         spoolCard.style.cssText = "background: var(--surface); border-radius: 0.5rem; padding: 0.75rem; border: 1px solid var(--border-subtle); cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; width: 140px; min-height: 180px; flex-shrink: 0;";
@@ -5085,7 +5106,21 @@
     });
   }
 
+  function renderCapacityAlerts() {
+    const container = document.getElementById("capacityAlerts");
+    if (!container) return;
+    container.replaceChildren();
+    const conflicts = getAmsCapacityConflicts();
+    container.hidden = conflicts.length === 0;
+    conflicts.forEach(unit => {
+      const message = document.createElement("div");
+      message.textContent = `Attenzione: locazione ${unit.label} sovraccarica — ${unit.count} bobine presenti, capacità massima ${unit.capacity}.`;
+      container.appendChild(message);
+    });
+  }
+
   function renderAll() {
+    renderCapacityAlerts();
     populateFilterOptions();
     renderFilamentTable();
     renderPurchasedTable();
@@ -5406,21 +5441,7 @@
             option.textContent = value || "Nessuna posizione"; location.appendChild(option);
           });
           location.value = spool.location;
-          location.addEventListener("change", () => {
-            const previousLocation = spool.location;
-            spool.location = location.value;
-            try {
-              const candidate = JSON.parse(JSON.stringify(draft));
-              setActiveFilamentSpools(candidate, session.spools);
-              recalcWeightsForFilament(candidate);
-              assertAmsCapacityTransition(filaments, filaments.map(f => f.id === session.id ? candidate : f));
-              syncBuffer();
-            } catch (error) {
-              spool.location = previousLocation;
-              location.value = previousLocation;
-              showToast(error.message, "error");
-            }
-          });
+          location.addEventListener("change", () => { spool.location = location.value; syncBuffer(); });
           makeLabel("Posizione").appendChild(location);
           const colorContainer = document.createElement("div");
           colorContainer.id = `edit-spool-color-${spool.id}`;
@@ -5737,10 +5758,6 @@
 
   function commitReplacementState(candidate, actionDescription, keepUndo = true, restoreAmsConflicts = false) {
     const previous = captureStateSnapshot(true);
-    if (!restoreAmsConflicts) {
-      try { assertAmsCapacityTransition(previous.filaments, candidate.filaments); }
-      catch (error) { showToast("Ripristino non applicato: " + error.message, "error"); return false; }
-    }
     const previousReady = stateReady;
     const previousBlocked = storageWriteBlocked;
     const previousReason = storageBlockReason;
