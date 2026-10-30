@@ -221,13 +221,13 @@ test("fatture: quantità zero, frazionaria e negativa rifiutate senza effetti", 
 test("V105 identifica il codice e data_revision cambia solo con i dati", () => {
   const t = harness({ registroFilamentiAppVersion: "V.999" });
   t.run("loadVersion();loadState();saveState(true)");
-  assert.equal(t.run("APP_VERSION"), "V.106");
+  assert.equal(t.run("APP_VERSION"), "V.107");
   const revision = t.run("dataRevision");
   assert.equal(t.run("saveState(true)"), true);
   assert.equal(t.run("dataRevision"), revision);
   t.run("locationList=['Test'];saveState(true)");
   assert.equal(t.run("dataRevision"), revision + 1);
-  assert.equal(t.run("APP_VERSION"), "V.106");
+  assert.equal(t.run("APP_VERSION"), "V.107");
 });
 
 test("backup v4: esportazione e ripristino conservano esattamente i dati", () => {

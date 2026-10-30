@@ -1,0 +1,319 @@
+﻿Codice,Materiale,Nome italiano,Nome inglese,Colori RGBA
+10300,PLA Basic,Arancione,Orange,#FF6A13FF
+10301,PLA Basic,Arancione zucca,Pumpkin Orange,#FF9016FF
+10602,PLA Basic,Grigio blu,Blue Gray,#5B6579FF
+10604,PLA Basic,Blu cobalto,Cobalt Blue,#0056B8FF
+10605,PLA Basic,Turchese,Turquoise,#00B1B7FF
+10603,PLA Basic,Ciano,Cyan,#0086D6FF
+10601,PLA Basic,Blu,Blue,#0A2989FF
+10103,PLA Basic,Grigio,Gray,#8E9089FF
+10102,PLA Basic,Argento,Silver,#A6A9AAFF
+10104,PLA Basic,Grigio chiaro,Light Gray,#D1D3D5FF
+10105,PLA Basic,Grigio scuro,Dark Gray,#545454FF
+10502,PLA Basic,Verde vischio,Mistletoe Green,#3F8E43FF
+10503,PLA Basic,Verde brillante,Bright Green,#BECF00FF
+10501,PLA Basic,Verde bambù,Bambu Green,#00AE42FF
+10101,PLA Basic,Nero,Black,#000000FF
+10900,PLA Basic,Arctic Whisper,Arctic Whisper,#9CDBD9FF;#FFFFFFFF
+10901,PLA Basic,Solar Breeze,Solar Breeze,#E94B3CFF;#FFFFFFFF
+10902,PLA Basic,Azzurro/verde con gradazione,Ocean to Meadow,#307FE2FF;#54FF9BFF
+10903,PLA Basic,Rosa citrus,Pink Citrus,#F78F77FF;#E4505AFF
+10904,PLA Basic,Lime menta,Mint Lime,#B6FF43FF;#4EC939FF
+10905,PLA Basic,Mirtillo,Blueberry Bubblegum,#6FCAEFFF;#8573DDFF
+10906,PLA Basic,Dusk Glare,Dusk Glare,#CE4406FF;#ED9558FF
+10907,PLA Basic,Zucchero filato,Cotton Candy Cloud,#E7C1D5FF;#8EC9E9FF
+10800,PLA Basic,Marrone,Brown,#9D432CFF
+10802,PLA Basic,Marrone cacao,Cocoa Brown,#6F5034FF
+10201,PLA Basic,Beige,Beige,#F7E6DEFF
+10203,PLA Basic,Rosa,Pink,#F55A74FF
+10701,PLA Basic,Viola indaco,Indigo Purple,#482960FF
+10700,PLA Basic,Viola,Purple,#5E43B7FF
+10202,PLA Basic,Magenta,Magenta,#EC008CFF
+10200,PLA Basic,Rosso,Red,#C12E1FFF
+10205,PLA Basic,Rosso bordeaux,Maroon Red,#9D2235FF
+10204,PLA Basic,Fucsia,Hot Pink,#F5547CFF
+10100,PLA Basic,Bianco giada,Jade White,#FFFFFFFF
+10400,PLA Basic,Giallo,Yellow,#F4EE2AFF
+10402,PLA Basic,Giallo girasole,Sunflower Yellow,#FEC600FF
+10801,PLA Basic,Bronzo,Bronze,#847D48FF
+10401,PLA Basic,Oro,Gold,#E4BD68FF
+11300,PLA Matte,Arancio mandarino,Mandarin Orange,#F99963FF
+11603,PLA Matte,Azzurro cielo,Sky Blue,#56B7E6FF
+11600,PLA Matte,Blu marino,Marine Blue,#0078BFFF
+11601,PLA Matte,Blu ghiaccio,Ice Blue,#A3D8E1FF
+11602,PLA Matte,Blu scuro,Dark Blue,#042F56FF
+11104,PLA Matte,Grigio Nardo,Nardo Gray,#757575FF
+11102,PLA Matte,Grigio cenere,Ash Gray,#9B9EA0FF
+11502,PLA Matte,Verde mela,Apple Green,#C2E189FF
+11500,PLA Matte,Verde prato,Grass Green,#61C680FF
+11501,PLA Matte,Verde scuro,Dark Green,#68724DFF
+11101,PLA Matte,Carbone,Charcoal,#000000FF
+11802,PLA Matte,Cioccolato,Dark Chocolate,#4D3324FF
+11800,PLA Matte,Caffelatte,Latte Brown,#D3B7A7FF
+11801,PLA Matte,Marrone scuro,Dark Brown,#7D6556FF
+11803,PLA Matte,Caramello,Caramel,#AE835BFF
+11201,PLA Matte,Rosa sakura,Sakura Pink,#E8AFCFFF
+11700,PLA Matte,Lilla,Lilac Purple,#AE96D4FF
+11200,PLA Matte,Rosso scarlatto,Scarlet Red,#DE4343FF
+11203,PLA Matte,Terracotta,Terracotta,#B15533FF
+11204,PLA Matte,Prugna,Plum,#950051FF
+11202,PLA Matte,Rosso scuro,Dark Red,#BB3D43FF
+11100,PLA Matte,Bianco avorio,Ivory White,#FFFFFFFF
+11103,PLA Matte,Bianco osso,Bone White,#CBC6B8FF
+11400,PLA Matte,Giallo limone,Lemon Yellow,#F7D959FF
+11401,PLA Matte,Sabbia,Desert Tan,#E8DBB7FF
+13601,PLA Silk,Blu,Blue,#147BD1FF
+13104,PLA Silk,Argento,Silver,#EAECEBFF
+13502,PLA Silk,Verde,Green,#4CE4A0FF
+13300,PLA Silk,Rame,Copper,#5E4B3CFF
+13202,PLA Silk,Rosa,Pink,#EEB1C1FF
+13701,PLA Silk,Viola,Purple,#854CE4FF
+13901,PLA Silk,Rosa con sfumature dorate,Gilded Rose,#FF9425FF;#C16784FF
+13902,PLA Silk,Midnight Blaze,Midnight Blaze,#0047BBFF;#7D1B49FF
+13903,PLA Silk,Neon City,Neon City,#0047BBFF;#BB22A3FF
+13904,PLA Silk,Blue Hawaii,Blue Hawaii,#418FDEFF;#70C884FF
+13905,PLA Silk,Velvet Eclipse (nero/rosso),Velvet Eclipse (Black-Red),#000000FF;#A34342FF
+13105,PLA Silk,Bianco,White,#FFFFFFFF
+13401,PLA Silk,Oro,Gold,#E5B03DFF
+13603,PLA Silk+,Blu-turchese chiaro,Baby Blue,#A8C6EEFF
+13604,PLA Silk+,Blu,Blue,#008BDAFF
+13108,PLA Silk+,Grigio titanio,Titan Gray,#5F6367FF
+13109,PLA Silk+,Argento,Silver,#C8C8C8FF
+13506,PLA Silk+,Verde caramella,Candy Green,#018814FF
+13507,PLA Silk+,Menta,Mint,#96DCB9FF
+13702,PLA Silk+,Viola,Purple,#8671CBFF
+13205,PLA Silk+,Rosso caramella,Candy Red,#D02727FF
+13206,PLA Silk+,Oro rosa,Rose Gold,#BA9594FF
+13207,PLA Silk+,Rosa,Pink,#F7ADA6FF
+13110,PLA Silk+,Bianco,White,#FFFFFFFF
+13404,PLA Silk+,Champagne,Champagne,#F3CFB2FF
+13405,PLA Silk+,Oro,Gold,#F4A925FF
+13103,PLA Marble,Marmo bianco,White Marble,#F7F3F0FF
+13201,PLA Marble,Rosso granito,Red Granite,#AD4E38FF
+13700,PLA Sparkle,Viola reale con brillantini,Royal Purple Sparkle,#483D8BFF
+13102,PLA Sparkle,Grigio ardesia con brillantini,Slate Gray Sparkle,#8E9089FF
+13501,PLA Sparkle,Verde alpino con brillantini,Alpine Green Sparkle,#3F5443FF
+13101,PLA Sparkle,Nero onice con brillantini,Onyx Black Sparkle,#2D2B28FF
+13200,PLA Sparkle,Rosso cremisi con brillantini,Crimson Red Sparkle,#792B36FF
+13402,PLA Sparkle,Oro con brillantini,Classic Gold Sparkle,#CEA629FF
+12300,PLA Tough,Arancione,Orange,#FF7F41FF
+12600,PLA Tough,Azzurro chiaro,Light Blue,#0085ADFF
+12700,PLA Tough,Blu lavanda,Lavender Blue,#6667ABFF
+12102,PLA Tough,Grigio,Gray,#515A6CFF
+12103,PLA Tough,Argento,Silver,#898D8DFF
+12500,PLA Tough,Verde pino,Pine Green,#00482BFF
+12101,PLA Tough,Nero,Black,#25282AFF
+12200,PLA Tough,Rosso vermiglio,Vermilion Red,#DD3C22FF
+12100,PLA Tough,Bianco,White,#F9F7F4FF
+12400,PLA Tough,Giallo,Yellow,#FEDB00FF
+14104,PLA Aero,Grigio,Gray,#CDCECAFF
+14103,PLA Aero,Nero,Black,#000000FF
+14102,PLA Aero,Bianco,White,#FFFFFFFF
+15300,PLA Glow,Arancione fosforescente,Glow Orange,#FF9D5BFF
+15600,PLA Glow,Blu fosforescente,Glow Blue,#7AC0E9FF
+15500,PLA Glow,Verde fosforescente,Glow Green,#A1FFACFF
+15200,PLA Glow,Rosa fosforescente,Glow Pink,#F17B8FFF
+15400,PLA Glow,Giallo fosforescente,Glow Yellow,#F8FF80FF
+15100,PLA Dynamic,Cambia colore con l'esposizione ai raggi UV - Da bianco a corallo,UV Color Changing - White to Coral,#FFFFFFFF
+13602,PLA Galaxy,Viola,Purple,#594177FF
+13503,PLA Galaxy,Verde,Green,#3B665EFF
+13504,PLA Galaxy,Nebula,Nebulae,#424379FF
+13203,PLA Galaxy,Marrone,Brown,#684A43FF
+13505,PLA Wood,Betulla,Classic Birch,#918669FF
+13107,PLA Wood,Noce nero,Black Walnut,#4F3F24FF
+13801,PLA Wood,Marrone argilla,Clay Brown,#995F11FF
+13204,PLA Wood,Palissandro,Rosewood,#4C241CFF
+13106,PLA Wood,Rovere bianco,White Oak,#D6CCA3FF
+13403,PLA Wood,Giallo ocra,Ochre Yellow,#C98935FF
+14601,PLA-CF,Blu royal,Royal Blue,#2842ADFF
+14600,PLA-CF,Blu jeans,Jeans Blue,#6e88bcFF
+14101,PLA-CF,Grigio lava,Lava Gray,#4d5054FF
+14500,PLA-CF,Verde matcha,Matcha Green,#5c9748FF
+14100,PLA-CF,Nero,Black,#000000FF
+14700,PLA-CF,Viola iris,Iris Purple,#69398EFF
+14200,PLA-CF,Rosso borgogna,Burgundy Red,#951e23FF
+40300,ABS,Arancione,Orange,#FF6A13FF
+40600,ABS,Blu,Blue,#0A2CA5FF
+40601,ABS,Azzurro,Azure,#489FDFFF
+40602,ABS,Blu navy,Navy Blue,#0C2340FF
+40501,ABS,Menta,Mint,#7AE1BFFF
+40102,ABS,Argento,Silver,#87909AFF
+40500,ABS,Verde bambù,Bambu Green,#00AE42FF
+40502,ABS,Oliva,Olive,#789D4AFF
+40101,ABS,Nero,Black,#000000FF
+40701,ABS,Lavanda,Lavender,#7248BDFF
+40700,ABS,Viola,Purple,#AF1685FF
+40200,ABS,Rosso,Red,#D32941FF
+40100,ABS,Bianco,White,#FFFFFFFF
+40400,ABS,Giallo,Yellow,#FCE900FF
+40402,ABS,Giallo tangerine,Tangerine Yellow,#FFC72CFF
+40401,ABS,Beige,Beige,#DFD1A7FF
+45600,ASA,Blu,Blue,#2140B4FF
+45102,ASA,Grigio,Gray,#8A949EFF
+45500,ASA,Verde,Green,#00A6A0FF
+45101,ASA,Nero,Black,#000000FF
+45200,ASA,Rosso,Red,#E02928FF
+45100,ASA,Bianco,White,#FFFAF2FF
+46100,ASA Aero,Bianco,White,#F5F1DDFF
+41300,ABS-GF,Arancione,Orange,#F48438FF
+41600,ABS-GF,Blu,Blue,#0C3B95FF
+41102,ABS-GF,Grigio,Gray,#C6C6C6FF
+41500,ABS-GF,Verde,Green,#61BF36FF
+41101,ABS-GF,Nero,Black,#000000FF
+41200,ABS-GF,Rosso,Red,#E83100FF
+41100,ABS-GF,Bianco,White,#FFFFFFFF
+41400,ABS-GF,Giallo,Yellow,#FFE133FF
+46101,ASA-CF,Nero,Black,#000000FF
+60102,PC,Nero trasparente,Clear Black,#68686580
+60103,PC,Trasparente,Transparent,#00000000
+60101,PC,Nero,Black,#000000FF
+60100,PC,Bianco,White,#FFFFFFFF
+63102,PC FR,Grigio,Gray,#A8A8AAFF
+63100,PC FR,Nero,Black,#000000FF
+63101,PC FR,Bianco,White,#FFFFFFFF
+32300,PETG Translucent,Arancione traslucido,Translucent Orange,#FF911A80
+32600,PETG Translucent,Azzurro traslucido,Translucent Light Blue,#61B0FF80
+32101,PETG Translucent,Trasparente,Clear,#00000000
+32100,PETG Translucent,Grigio traslucido,Translucent Gray,#8E8E8E80
+32500,PETG Translucent,Oliva traslucido,Translucent Olive,#748C4580
+32501,PETG Translucent,Verde petrolio traslucido,Translucent Teal,#77EDD780
+32800,PETG Translucent,Marrone traslucido,Translucent Brown,#C9A38180
+32700,PETG Translucent,Viola traslucido,Translucent Purple,#D6ABFF80
+32200,PETG Translucent,Rosa traslucido,Translucent Pink,#F9C1BD80
+33300,PETG HF,Arancione,Orange,#F75403FF
+33600,PETG HF,Blu,Blue,#002E96FF
+33601,PETG HF,Blu lago,Lake Blue,#1F79E5FF
+33101,PETG HF,Grigio,Gray,#ADB1B2FF
+33103,PETG HF,Grigio scuro,Dark Gray,#515151FF
+33500,PETG HF,Verde,Green,#00AE42FF
+33501,PETG HF,Verde lime,Lime Green,#6EE53CFF
+33502,PETG HF,Verde foresta,Forest Green,#39541AFF
+33102,PETG HF,Nero,Black,#000000FF
+33801,PETG HF,Cognac,Peanut Brown,#875718FF
+33200,PETG HF,Rosso,Red,#BC0900FF
+33100,PETG HF,Bianco,White,#FFFFFFFF
+33400,PETG HF,Giallo,Yellow,#FFD00BFF
+33401,PETG HF,Panna,Cream,#F9DFB9FF
+31600,PETG-CF,Blu indaco,Indigo Blue,#324585FF
+31101,PETG-CF,Grigio titanio,Titan Gray,#565656FF
+31500,PETG-CF,Verde malachite,Malachite Green,#16b08eFF
+31100,PETG-CF,Nero,Black,#000000FF
+31700,PETG-CF,Viola,Violet Purple,#583061FF
+31200,PETG-CF,Rosso mattone,Brick Red,#9f332aFF
+70100,PAHT-CF,Nero,Black,#000000FF
+72100,PA6-CF,Nero,Black,#000000FF
+73100,PPA-CF,Nero,Black,#000000FF
+72600,PA6-GF,Blu,Blue,#75AED8FF
+72102,PA6-GF,Bianco,White,#EAEAE4FF
+72103,PA6-GF,Grigio,Gray,#353533FF
+72500,PA6-GF,Lime,Lime,#C5ED48FF
+72104,PA6-GF,Nero,Black,#000000FF
+72800,PA6-GF,Marrone,Brown,#5B492FFF
+72200,PA6-GF,Arancione,Orange,#FF4800FF
+72400,PA6-GF,Giallo,Yellow,#FFCE00FF
+65500,Support for PA/PET,Verde,Green,#C0DF16FF
+66400,PVA,Trasparente,Clear,#F0F1A880
+65102,Support for PLA/PETG,Naturale,Nature,#00000000
+65103,Support for PLA/PETG,Nero,Black,#000000FF
+66100,Support for ABS,Bianco,White,#FFFFFFFF
+71100,PET-CF,Nero,Black,#000000FF
+76100,PPS-CF,Nero,Black,#000000FF
+51600,TPU 95A HF,Blu,Blue,#0072CEFF
+51101,TPU 95A HF,Grigio,Gray,#898D8DFF
+51100,TPU 95A HF,Nero,Black,#101820FF
+51200,TPU 95A HF,Rosso,Red,#C8102EFF
+51102,TPU 95A HF,Bianco,White,#FFFFFFFF
+51400,TPU 95A HF,Giallo,Yellow,#F3E600FF
+50101,TPU 95A,Nero,Black,#000000FF
+50100,TPU 95A,Bianco,White,#FFFFFFFF
+53600,TPU for AMS,Blu,Blue,#5898DDFF
+53102,TPU for AMS,Grigio,Gray,#939393FF
+53500,TPU for AMS,Verde neon,Neon Green,#90FF1AFF
+53101,TPU for AMS,Nero,Black,#000000FF
+53200,TPU for AMS,Rosso,Red,#ED0000FF
+53100,TPU for AMS,Bianco,White,#FFFFFFFF
+53400,TPU for AMS,Giallo,Yellow,#F9EF41FF
+16100,PLA Lite,Black,Black,#000000FF
+16400,PLA Lite,Yellow,Yellow,#EFE255FF
+16103,PLA Lite,White,White,#FFFFFFFF
+16600,PLA Lite,Cyan,Cyan,#4DAFDAFF
+16200,PLA Lite,Red,Red,#C6001AFF
+16101,PLA Lite,Grigio,Gray,#999D9DFF
+13210,PLA Translucent,Red,Red,#B5001180
+13211,PLA Translucent,Cherry Pink,Cherry Pink,#F5B6CD80
+13301,PLA Translucent,Orange,Orange,#F74E0280
+13410,PLA Translucent,Mellow Yellow,Mellow Yellow,#F5DBAB80
+13510,PLA Translucent,Light Jade,Light Jade,#96D8AF80
+13610,PLA Translucent,Ice Blue,Ice Blue,#B8CDE980
+13611,PLA Translucent,Blue,Blue,#0047BB80
+13612,PLA Translucent,Teal,Teal,#009FA180
+13710,PLA Translucent,Purple,Purple,#8344B080
+13711,PLA Translucent,Lavender,Lavender,#B8ACD680
+13906,PLA Silk,South Beach,South Beach,#F772A4FF;#00918BFF
+13909,PLA Silk,Aurora Purple,Aurora Purple,#7F3696FF;#006EC9FF
+13912,PLA Silk,Dawn Radiance,Dawn Radiance,#EC984CFF;#6CD4BCFF;#A66EB9FF;#D87694FF
+51103,TPU 90A,Black,Black,#000000FF
+51105,TPU 90A,White,White,#FFFFFFFF
+51305,TPU 85A,Neon Orange,Neon Orange,#F68B1BFF
+51500,TPU 85A,Light Cyan,Light Cyan,#C3E2D6FF
+51900,TPU 90A,Frozen,Frozen,#40B6E4FF;#FFFFFFFF
+51901,TPU 90A,Blaze,Blaze,#D21B3CFF;#F1AAA8FF
+65104,Support for PLA,White,White,#FFFFFFFF
+12104,PLA Tough+,Black,Black,#000000FF
+12105,PLA Tough+,Gray,Gray,#AFB1AEFF
+12106,PLA Tough+,Silver,Silver,#959698FF
+12107,PLA Tough+,White,White,#FFFFFFFF
+12301,PLA Tough+,Orange,Orange,#DC3A27FF
+12401,PLA Tough+,Yellow,Yellow,#F4D53FFF
+12601,PLA Tough+,Cyan,Cyan,#009BD8FF
+13100,PLA Metal,Iron Gray Metallic,Iron Gray Metallic,#43403DFF
+13400,PLA Metal,Iridium Gold Metallic,Iridium Gold Metallic,#B39B84FF
+13500,PLA Metal,Oxide Green Metallic,Oxide Green Metallic,#1D7C6AFF
+13600,PLA Metal,Cobalt Blue Metallic,Cobalt Blue Metallic,#39699EFF
+13800,PLA Metal,Copper Brown Metallic,Copper Brown Metallic,#AA6443FF
+16601,PLA Lite,Blue,Blue,#004EA8FF
+16401,PLA Lite,Sunflower Yellow,Sunflower Yellow,#FFB549FF
+16501,PLA Lite,Green,Green,#00BB31FF
+16301,PLA Lite,Orange,Orange,#FF671FFF
+16700,PLA Lite,Matte Beige,Matte Beige,#ECC3B2FF
+16800,PLA Lite,Cocoa Brown,Cocoa Brown,#745335FF
+16102,PLA Lite,Dark Gray,Dark Gray,#8c8b8cFF
+13913,PLA Silk,Mystic Magenta,Mystic Magenta,#720062FF;#3a913fFF
+13916,PLA Silk,Phantom Blue,Phantom Blue,#00629bFF;#000000FF
+51601,TPU 90A,Crystal Blue,Crystal Blue,#7eb4e180
+51106,TPU 90A,Quicksilver,Quicksilver,#9ea2a2FF
+51201,TPU 85A,Rose Beige/Flesh,Rose Beige/Flesh,#F3CFB2FF
+51700,TPU 90A,Grape Jelly,Grape Jelly,#D6ABFF80
+51107,TPU 85A,Black,Black,#000000FF
+51501,TPU 85A,Lime Green,Lime Green,#CDEA80FF
+51800,TPU 90A,Cocoa Brown,Cocoa Brown,#5C4738FF
+30105,PETG Basic,Black,Black,#000000FF
+30106,PETG Basic,White,White,#FFFFFFFF
+30107,PETG Basic,Gray,Gray,#7F7E83FF
+30402,PETG Basic,Yellow,Yellow,#FCE300FF
+30201,PETG Basic,Red,Red,#D6001CFF
+30603,PETG Basic,Reflex Blue,Reflex Blue,#001489FF
+30800,PETG Basic,Dark Brown,Dark Brown,#4f2c1dFF
+30502,PETG Basic,Green,Green,#009639FF
+30301,PETG Basic,Orange,Orange,#FF671FFF
+30503,PETG Basic,Pine Green,Pine Green,#034638FF
+30604,PETG Basic,Navy Blue,Navy Blue,#0086d6FF
+30108,PETG Basic,Misty Blue,Misty Blue,#688197FF
+30403,PETG Basic,Dark Beige,Dark Beige,#dbc8b6FF
+17100,PLA Pure,Pure White,Pure White,#FFFFFFFF
+17101,PLA Pure,Absolute Black,Absolute Black,#000000FF
+17200,PLA Pure,Milky Pink,Milky Pink,#f7ced7FF
+17600,PLA Pure,Baby Blue,Baby Blue,#a4dbe8FF
+17300,PLA Pure,Apricot,Apricot,#ffb673FF
+30701,PETG Basic,Purple,Purple,#8A75D1FF
+30404,PETG Basic,Sunflower Yellow,Sunflower Yellow,#FFB81CFF
+30504,PETG Basic,Bright Green,Bright Green,#97D700FF
+30702,PETG Basic,Hot Pink,Hot Pink,#F277C6FF
+35100,PETG Matte,White,White,#FFFFFFFF
+35101,PETG Matte,Black,Black,#000000FF
+35500,PETG Matte,Lime,Lime,#c0df16FF
+35102,PETG Matte,Gray,Gray,#7F7E83FF
+35700,PETG Matte,Pink,Pink,#FABBCBFF
+35600,PETG Matte,Baby Blue,Baby Blue,#B9D9EBFF
+35702,PETG Matte,Violet,Violet,#A7A4E0FF
+35501,PETG Matte,Avocado Green,Avocado Green,#bce194FF

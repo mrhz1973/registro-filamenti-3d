@@ -2287,3 +2287,7 @@
 .location-over-capacity { border-color: #ef4444 !important; box-shadow: 0 0 0 2px #ef4444 !important; }
 .location-drop-target { outline: 3px solid #60a5fa; outline-offset: 2px; }
 .ams-capacity-warning { border-color: #ef4444; background: rgba(220, 38, 38, .18); }
+
+.file-backup-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-subtle); border-radius: .6rem; background: var(--surface-soft); }
+.file-backup-panel p { margin: .4rem 0; overflow-wrap: anywhere; }
+.file-backup-panel .backup-error { color: var(--danger); font-weight: 600; }

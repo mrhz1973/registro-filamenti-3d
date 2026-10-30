@@ -7,7 +7,7 @@
   }
 
   const VERSION_KEY = "registroFilamentiAppVersion";
-  const INITIAL_VERSION = "V.106";
+  const INITIAL_VERSION = "V.107";
   let APP_VERSION = INITIAL_VERSION;
   // Esponi APP_VERSION globalmente per permettere aggiornamento automatico della versione nell'HTML
   if (typeof window !== 'undefined') {
@@ -380,6 +380,363 @@
     "petg high flow": "PETG HF"
   };
 
+  // Catalogo fattuale Bambu Studio, commit 804d93bb5de142c48c0dabedba87736ea9553206; fonte e verifica in docs/catalogo-bambu-fonte.json.
+  const bambuOfficialColors = [
+    {"code":"10300","material":"PLA Basic","id":"GFA00","name":"Arancione","en":"Orange","colors":["#FF6A13FF"]},
+    {"code":"10301","material":"PLA Basic","id":"GFA00","name":"Arancione zucca","en":"Pumpkin Orange","colors":["#FF9016FF"]},
+    {"code":"10602","material":"PLA Basic","id":"GFA00","name":"Grigio blu","en":"Blue Gray","colors":["#5B6579FF"]},
+    {"code":"10604","material":"PLA Basic","id":"GFA00","name":"Blu cobalto","en":"Cobalt Blue","colors":["#0056B8FF"]},
+    {"code":"10605","material":"PLA Basic","id":"GFA00","name":"Turchese","en":"Turquoise","colors":["#00B1B7FF"]},
+    {"code":"10603","material":"PLA Basic","id":"GFA00","name":"Ciano","en":"Cyan","colors":["#0086D6FF"]},
+    {"code":"10601","material":"PLA Basic","id":"GFA00","name":"Blu","en":"Blue","colors":["#0A2989FF"]},
+    {"code":"10103","material":"PLA Basic","id":"GFA00","name":"Grigio","en":"Gray","colors":["#8E9089FF"]},
+    {"code":"10102","material":"PLA Basic","id":"GFA00","name":"Argento","en":"Silver","colors":["#A6A9AAFF"]},
+    {"code":"10104","material":"PLA Basic","id":"GFA00","name":"Grigio chiaro","en":"Light Gray","colors":["#D1D3D5FF"]},
+    {"code":"10105","material":"PLA Basic","id":"GFA00","name":"Grigio scuro","en":"Dark Gray","colors":["#545454FF"]},
+    {"code":"10502","material":"PLA Basic","id":"GFA00","name":"Verde vischio","en":"Mistletoe Green","colors":["#3F8E43FF"]},
+    {"code":"10503","material":"PLA Basic","id":"GFA00","name":"Verde brillante","en":"Bright Green","colors":["#BECF00FF"]},
+    {"code":"10501","material":"PLA Basic","id":"GFA00","name":"Verde bambù","en":"Bambu Green","colors":["#00AE42FF"]},
+    {"code":"10101","material":"PLA Basic","id":"GFA00","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"10900","material":"PLA Basic","id":"GFA00","name":"Arctic Whisper","en":"Arctic Whisper","colors":["#9CDBD9FF","#FFFFFFFF"]},
+    {"code":"10901","material":"PLA Basic","id":"GFA00","name":"Solar Breeze","en":"Solar Breeze","colors":["#E94B3CFF","#FFFFFFFF"]},
+    {"code":"10902","material":"PLA Basic","id":"GFA00","name":"Azzurro/verde con gradazione","en":"Ocean to Meadow","colors":["#307FE2FF","#54FF9BFF"]},
+    {"code":"10903","material":"PLA Basic","id":"GFA00","name":"Rosa citrus","en":"Pink Citrus","colors":["#F78F77FF","#E4505AFF"]},
+    {"code":"10904","material":"PLA Basic","id":"GFA00","name":"Lime menta","en":"Mint Lime","colors":["#B6FF43FF","#4EC939FF"]},
+    {"code":"10905","material":"PLA Basic","id":"GFA00","name":"Mirtillo","en":"Blueberry Bubblegum","colors":["#6FCAEFFF","#8573DDFF"]},
+    {"code":"10906","material":"PLA Basic","id":"GFA00","name":"Dusk Glare","en":"Dusk Glare","colors":["#CE4406FF","#ED9558FF"]},
+    {"code":"10907","material":"PLA Basic","id":"GFA00","name":"Zucchero filato","en":"Cotton Candy Cloud","colors":["#E7C1D5FF","#8EC9E9FF"]},
+    {"code":"10800","material":"PLA Basic","id":"GFA00","name":"Marrone","en":"Brown","colors":["#9D432CFF"]},
+    {"code":"10802","material":"PLA Basic","id":"GFA00","name":"Marrone cacao","en":"Cocoa Brown","colors":["#6F5034FF"]},
+    {"code":"10201","material":"PLA Basic","id":"GFA00","name":"Beige","en":"Beige","colors":["#F7E6DEFF"]},
+    {"code":"10203","material":"PLA Basic","id":"GFA00","name":"Rosa","en":"Pink","colors":["#F55A74FF"]},
+    {"code":"10701","material":"PLA Basic","id":"GFA00","name":"Viola indaco","en":"Indigo Purple","colors":["#482960FF"]},
+    {"code":"10700","material":"PLA Basic","id":"GFA00","name":"Viola","en":"Purple","colors":["#5E43B7FF"]},
+    {"code":"10202","material":"PLA Basic","id":"GFA00","name":"Magenta","en":"Magenta","colors":["#EC008CFF"]},
+    {"code":"10200","material":"PLA Basic","id":"GFA00","name":"Rosso","en":"Red","colors":["#C12E1FFF"]},
+    {"code":"10205","material":"PLA Basic","id":"GFA00","name":"Rosso bordeaux","en":"Maroon Red","colors":["#9D2235FF"]},
+    {"code":"10204","material":"PLA Basic","id":"GFA00","name":"Fucsia","en":"Hot Pink","colors":["#F5547CFF"]},
+    {"code":"10100","material":"PLA Basic","id":"GFA00","name":"Bianco giada","en":"Jade White","colors":["#FFFFFFFF"]},
+    {"code":"10400","material":"PLA Basic","id":"GFA00","name":"Giallo","en":"Yellow","colors":["#F4EE2AFF"]},
+    {"code":"10402","material":"PLA Basic","id":"GFA00","name":"Giallo girasole","en":"Sunflower Yellow","colors":["#FEC600FF"]},
+    {"code":"10801","material":"PLA Basic","id":"GFA00","name":"Bronzo","en":"Bronze","colors":["#847D48FF"]},
+    {"code":"10401","material":"PLA Basic","id":"GFA00","name":"Oro","en":"Gold","colors":["#E4BD68FF"]},
+    {"code":"11300","material":"PLA Matte","id":"GFA01","name":"Arancio mandarino","en":"Mandarin Orange","colors":["#F99963FF"]},
+    {"code":"11603","material":"PLA Matte","id":"GFA01","name":"Azzurro cielo","en":"Sky Blue","colors":["#56B7E6FF"]},
+    {"code":"11600","material":"PLA Matte","id":"GFA01","name":"Blu marino","en":"Marine Blue","colors":["#0078BFFF"]},
+    {"code":"11601","material":"PLA Matte","id":"GFA01","name":"Blu ghiaccio","en":"Ice Blue","colors":["#A3D8E1FF"]},
+    {"code":"11602","material":"PLA Matte","id":"GFA01","name":"Blu scuro","en":"Dark Blue","colors":["#042F56FF"]},
+    {"code":"11104","material":"PLA Matte","id":"GFA01","name":"Grigio Nardo","en":"Nardo Gray","colors":["#757575FF"]},
+    {"code":"11102","material":"PLA Matte","id":"GFA01","name":"Grigio cenere","en":"Ash Gray","colors":["#9B9EA0FF"]},
+    {"code":"11502","material":"PLA Matte","id":"GFA01","name":"Verde mela","en":"Apple Green","colors":["#C2E189FF"]},
+    {"code":"11500","material":"PLA Matte","id":"GFA01","name":"Verde prato","en":"Grass Green","colors":["#61C680FF"]},
+    {"code":"11501","material":"PLA Matte","id":"GFA01","name":"Verde scuro","en":"Dark Green","colors":["#68724DFF"]},
+    {"code":"11101","material":"PLA Matte","id":"GFA01","name":"Carbone","en":"Charcoal","colors":["#000000FF"]},
+    {"code":"11802","material":"PLA Matte","id":"GFA01","name":"Cioccolato","en":"Dark Chocolate","colors":["#4D3324FF"]},
+    {"code":"11800","material":"PLA Matte","id":"GFA01","name":"Caffelatte","en":"Latte Brown","colors":["#D3B7A7FF"]},
+    {"code":"11801","material":"PLA Matte","id":"GFA01","name":"Marrone scuro","en":"Dark Brown","colors":["#7D6556FF"]},
+    {"code":"11803","material":"PLA Matte","id":"GFA01","name":"Caramello","en":"Caramel","colors":["#AE835BFF"]},
+    {"code":"11201","material":"PLA Matte","id":"GFA01","name":"Rosa sakura","en":"Sakura Pink","colors":["#E8AFCFFF"]},
+    {"code":"11700","material":"PLA Matte","id":"GFA01","name":"Lilla","en":"Lilac Purple","colors":["#AE96D4FF"]},
+    {"code":"11200","material":"PLA Matte","id":"GFA01","name":"Rosso scarlatto","en":"Scarlet Red","colors":["#DE4343FF"]},
+    {"code":"11203","material":"PLA Matte","id":"GFA01","name":"Terracotta","en":"Terracotta","colors":["#B15533FF"]},
+    {"code":"11204","material":"PLA Matte","id":"GFA01","name":"Prugna","en":"Plum","colors":["#950051FF"]},
+    {"code":"11202","material":"PLA Matte","id":"GFA01","name":"Rosso scuro","en":"Dark Red","colors":["#BB3D43FF"]},
+    {"code":"11100","material":"PLA Matte","id":"GFA01","name":"Bianco avorio","en":"Ivory White","colors":["#FFFFFFFF"]},
+    {"code":"11103","material":"PLA Matte","id":"GFA01","name":"Bianco osso","en":"Bone White","colors":["#CBC6B8FF"]},
+    {"code":"11400","material":"PLA Matte","id":"GFA01","name":"Giallo limone","en":"Lemon Yellow","colors":["#F7D959FF"]},
+    {"code":"11401","material":"PLA Matte","id":"GFA01","name":"Sabbia","en":"Desert Tan","colors":["#E8DBB7FF"]},
+    {"code":"13601","material":"PLA Silk","id":"GFA05","name":"Blu","en":"Blue","colors":["#147BD1FF"]},
+    {"code":"13104","material":"PLA Silk","id":"GFA05","name":"Argento","en":"Silver","colors":["#EAECEBFF"]},
+    {"code":"13502","material":"PLA Silk","id":"GFA05","name":"Verde","en":"Green","colors":["#4CE4A0FF"]},
+    {"code":"13300","material":"PLA Silk","id":"GFA05","name":"Rame","en":"Copper","colors":["#5E4B3CFF"]},
+    {"code":"13202","material":"PLA Silk","id":"GFA05","name":"Rosa","en":"Pink","colors":["#EEB1C1FF"]},
+    {"code":"13701","material":"PLA Silk","id":"GFA05","name":"Viola","en":"Purple","colors":["#854CE4FF"]},
+    {"code":"13901","material":"PLA Silk","id":"GFA05","name":"Rosa con sfumature dorate","en":"Gilded Rose","colors":["#FF9425FF","#C16784FF"]},
+    {"code":"13902","material":"PLA Silk","id":"GFA05","name":"Midnight Blaze","en":"Midnight Blaze","colors":["#0047BBFF","#7D1B49FF"]},
+    {"code":"13903","material":"PLA Silk","id":"GFA05","name":"Neon City","en":"Neon City","colors":["#0047BBFF","#BB22A3FF"]},
+    {"code":"13904","material":"PLA Silk","id":"GFA05","name":"Blue Hawaii","en":"Blue Hawaii","colors":["#418FDEFF","#70C884FF"]},
+    {"code":"13905","material":"PLA Silk","id":"GFA05","name":"Velvet Eclipse (nero/rosso)","en":"Velvet Eclipse (Black-Red)","colors":["#000000FF","#A34342FF"]},
+    {"code":"13105","material":"PLA Silk","id":"GFA05","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"13401","material":"PLA Silk","id":"GFA05","name":"Oro","en":"Gold","colors":["#E5B03DFF"]},
+    {"code":"13603","material":"PLA Silk+","id":"GFA06","name":"Blu-turchese chiaro","en":"Baby Blue","colors":["#A8C6EEFF"]},
+    {"code":"13604","material":"PLA Silk+","id":"GFA06","name":"Blu","en":"Blue","colors":["#008BDAFF"]},
+    {"code":"13108","material":"PLA Silk+","id":"GFA06","name":"Grigio titanio","en":"Titan Gray","colors":["#5F6367FF"]},
+    {"code":"13109","material":"PLA Silk+","id":"GFA06","name":"Argento","en":"Silver","colors":["#C8C8C8FF"]},
+    {"code":"13506","material":"PLA Silk+","id":"GFA06","name":"Verde caramella","en":"Candy Green","colors":["#018814FF"]},
+    {"code":"13507","material":"PLA Silk+","id":"GFA06","name":"Menta","en":"Mint","colors":["#96DCB9FF"]},
+    {"code":"13702","material":"PLA Silk+","id":"GFA06","name":"Viola","en":"Purple","colors":["#8671CBFF"]},
+    {"code":"13205","material":"PLA Silk+","id":"GFA06","name":"Rosso caramella","en":"Candy Red","colors":["#D02727FF"]},
+    {"code":"13206","material":"PLA Silk+","id":"GFA06","name":"Oro rosa","en":"Rose Gold","colors":["#BA9594FF"]},
+    {"code":"13207","material":"PLA Silk+","id":"GFA06","name":"Rosa","en":"Pink","colors":["#F7ADA6FF"]},
+    {"code":"13110","material":"PLA Silk+","id":"GFA06","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"13404","material":"PLA Silk+","id":"GFA06","name":"Champagne","en":"Champagne","colors":["#F3CFB2FF"]},
+    {"code":"13405","material":"PLA Silk+","id":"GFA06","name":"Oro","en":"Gold","colors":["#F4A925FF"]},
+    {"code":"13103","material":"PLA Marble","id":"GFA07","name":"Marmo bianco","en":"White Marble","colors":["#F7F3F0FF"]},
+    {"code":"13201","material":"PLA Marble","id":"GFA07","name":"Rosso granito","en":"Red Granite","colors":["#AD4E38FF"]},
+    {"code":"13700","material":"PLA Sparkle","id":"GFA08","name":"Viola reale con brillantini","en":"Royal Purple Sparkle","colors":["#483D8BFF"]},
+    {"code":"13102","material":"PLA Sparkle","id":"GFA08","name":"Grigio ardesia con brillantini","en":"Slate Gray Sparkle","colors":["#8E9089FF"]},
+    {"code":"13501","material":"PLA Sparkle","id":"GFA08","name":"Verde alpino con brillantini","en":"Alpine Green Sparkle","colors":["#3F5443FF"]},
+    {"code":"13101","material":"PLA Sparkle","id":"GFA08","name":"Nero onice con brillantini","en":"Onyx Black Sparkle","colors":["#2D2B28FF"]},
+    {"code":"13200","material":"PLA Sparkle","id":"GFA08","name":"Rosso cremisi con brillantini","en":"Crimson Red Sparkle","colors":["#792B36FF"]},
+    {"code":"13402","material":"PLA Sparkle","id":"GFA08","name":"Oro con brillantini","en":"Classic Gold Sparkle","colors":["#CEA629FF"]},
+    {"code":"12300","material":"PLA Tough","id":"GFA09","name":"Arancione","en":"Orange","colors":["#FF7F41FF"]},
+    {"code":"12600","material":"PLA Tough","id":"GFA09","name":"Azzurro chiaro","en":"Light Blue","colors":["#0085ADFF"]},
+    {"code":"12700","material":"PLA Tough","id":"GFA09","name":"Blu lavanda","en":"Lavender Blue","colors":["#6667ABFF"]},
+    {"code":"12102","material":"PLA Tough","id":"GFA09","name":"Grigio","en":"Gray","colors":["#515A6CFF"]},
+    {"code":"12103","material":"PLA Tough","id":"GFA09","name":"Argento","en":"Silver","colors":["#898D8DFF"]},
+    {"code":"12500","material":"PLA Tough","id":"GFA09","name":"Verde pino","en":"Pine Green","colors":["#00482BFF"]},
+    {"code":"12101","material":"PLA Tough","id":"GFA09","name":"Nero","en":"Black","colors":["#25282AFF"]},
+    {"code":"12200","material":"PLA Tough","id":"GFA09","name":"Rosso vermiglio","en":"Vermilion Red","colors":["#DD3C22FF"]},
+    {"code":"12100","material":"PLA Tough","id":"GFA09","name":"Bianco","en":"White","colors":["#F9F7F4FF"]},
+    {"code":"12400","material":"PLA Tough","id":"GFA09","name":"Giallo","en":"Yellow","colors":["#FEDB00FF"]},
+    {"code":"14104","material":"PLA Aero","id":"GFA11","name":"Grigio","en":"Gray","colors":["#CDCECAFF"]},
+    {"code":"14103","material":"PLA Aero","id":"GFA11","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"14102","material":"PLA Aero","id":"GFA11","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"15300","material":"PLA Glow","id":"GFA12","name":"Arancione fosforescente","en":"Glow Orange","colors":["#FF9D5BFF"]},
+    {"code":"15600","material":"PLA Glow","id":"GFA12","name":"Blu fosforescente","en":"Glow Blue","colors":["#7AC0E9FF"]},
+    {"code":"15500","material":"PLA Glow","id":"GFA12","name":"Verde fosforescente","en":"Glow Green","colors":["#A1FFACFF"]},
+    {"code":"15200","material":"PLA Glow","id":"GFA12","name":"Rosa fosforescente","en":"Glow Pink","colors":["#F17B8FFF"]},
+    {"code":"15400","material":"PLA Glow","id":"GFA12","name":"Giallo fosforescente","en":"Glow Yellow","colors":["#F8FF80FF"]},
+    {"code":"15100","material":"PLA Dynamic","id":"GFA13","name":"Cambia colore con l'esposizione ai raggi UV - Da bianco a corallo","en":"UV Color Changing - White to Coral","colors":["#FFFFFFFF"]},
+    {"code":"13602","material":"PLA Galaxy","id":"GFA15","name":"Viola","en":"Purple","colors":["#594177FF"]},
+    {"code":"13503","material":"PLA Galaxy","id":"GFA15","name":"Verde","en":"Green","colors":["#3B665EFF"]},
+    {"code":"13504","material":"PLA Galaxy","id":"GFA15","name":"Nebula","en":"Nebulae","colors":["#424379FF"]},
+    {"code":"13203","material":"PLA Galaxy","id":"GFA15","name":"Marrone","en":"Brown","colors":["#684A43FF"]},
+    {"code":"13505","material":"PLA Wood","id":"GFA16","name":"Betulla","en":"Classic Birch","colors":["#918669FF"]},
+    {"code":"13107","material":"PLA Wood","id":"GFA16","name":"Noce nero","en":"Black Walnut","colors":["#4F3F24FF"]},
+    {"code":"13801","material":"PLA Wood","id":"GFA16","name":"Marrone argilla","en":"Clay Brown","colors":["#995F11FF"]},
+    {"code":"13204","material":"PLA Wood","id":"GFA16","name":"Palissandro","en":"Rosewood","colors":["#4C241CFF"]},
+    {"code":"13106","material":"PLA Wood","id":"GFA16","name":"Rovere bianco","en":"White Oak","colors":["#D6CCA3FF"]},
+    {"code":"13403","material":"PLA Wood","id":"GFA16","name":"Giallo ocra","en":"Ochre Yellow","colors":["#C98935FF"]},
+    {"code":"14601","material":"PLA-CF","id":"GFA50","name":"Blu royal","en":"Royal Blue","colors":["#2842ADFF"]},
+    {"code":"14600","material":"PLA-CF","id":"GFA50","name":"Blu jeans","en":"Jeans Blue","colors":["#6e88bcFF"]},
+    {"code":"14101","material":"PLA-CF","id":"GFA50","name":"Grigio lava","en":"Lava Gray","colors":["#4d5054FF"]},
+    {"code":"14500","material":"PLA-CF","id":"GFA50","name":"Verde matcha","en":"Matcha Green","colors":["#5c9748FF"]},
+    {"code":"14100","material":"PLA-CF","id":"GFA50","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"14700","material":"PLA-CF","id":"GFA50","name":"Viola iris","en":"Iris Purple","colors":["#69398EFF"]},
+    {"code":"14200","material":"PLA-CF","id":"GFA50","name":"Rosso borgogna","en":"Burgundy Red","colors":["#951e23FF"]},
+    {"code":"40300","material":"ABS","id":"GFB00","name":"Arancione","en":"Orange","colors":["#FF6A13FF"]},
+    {"code":"40600","material":"ABS","id":"GFB00","name":"Blu","en":"Blue","colors":["#0A2CA5FF"]},
+    {"code":"40601","material":"ABS","id":"GFB00","name":"Azzurro","en":"Azure","colors":["#489FDFFF"]},
+    {"code":"40602","material":"ABS","id":"GFB00","name":"Blu navy","en":"Navy Blue","colors":["#0C2340FF"]},
+    {"code":"40501","material":"ABS","id":"GFB00","name":"Menta","en":"Mint","colors":["#7AE1BFFF"]},
+    {"code":"40102","material":"ABS","id":"GFB00","name":"Argento","en":"Silver","colors":["#87909AFF"]},
+    {"code":"40500","material":"ABS","id":"GFB00","name":"Verde bambù","en":"Bambu Green","colors":["#00AE42FF"]},
+    {"code":"40502","material":"ABS","id":"GFB00","name":"Oliva","en":"Olive","colors":["#789D4AFF"]},
+    {"code":"40101","material":"ABS","id":"GFB00","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"40701","material":"ABS","id":"GFB00","name":"Lavanda","en":"Lavender","colors":["#7248BDFF"]},
+    {"code":"40700","material":"ABS","id":"GFB00","name":"Viola","en":"Purple","colors":["#AF1685FF"]},
+    {"code":"40200","material":"ABS","id":"GFB00","name":"Rosso","en":"Red","colors":["#D32941FF"]},
+    {"code":"40100","material":"ABS","id":"GFB00","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"40400","material":"ABS","id":"GFB00","name":"Giallo","en":"Yellow","colors":["#FCE900FF"]},
+    {"code":"40402","material":"ABS","id":"GFB00","name":"Giallo tangerine","en":"Tangerine Yellow","colors":["#FFC72CFF"]},
+    {"code":"40401","material":"ABS","id":"GFB00","name":"Beige","en":"Beige","colors":["#DFD1A7FF"]},
+    {"code":"45600","material":"ASA","id":"GFB01","name":"Blu","en":"Blue","colors":["#2140B4FF"]},
+    {"code":"45102","material":"ASA","id":"GFB01","name":"Grigio","en":"Gray","colors":["#8A949EFF"]},
+    {"code":"45500","material":"ASA","id":"GFB01","name":"Verde","en":"Green","colors":["#00A6A0FF"]},
+    {"code":"45101","material":"ASA","id":"GFB01","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"45200","material":"ASA","id":"GFB01","name":"Rosso","en":"Red","colors":["#E02928FF"]},
+    {"code":"45100","material":"ASA","id":"GFB01","name":"Bianco","en":"White","colors":["#FFFAF2FF"]},
+    {"code":"46100","material":"ASA Aero","id":"GFB02","name":"Bianco","en":"White","colors":["#F5F1DDFF"]},
+    {"code":"41300","material":"ABS-GF","id":"GFB50","name":"Arancione","en":"Orange","colors":["#F48438FF"]},
+    {"code":"41600","material":"ABS-GF","id":"GFB50","name":"Blu","en":"Blue","colors":["#0C3B95FF"]},
+    {"code":"41102","material":"ABS-GF","id":"GFB50","name":"Grigio","en":"Gray","colors":["#C6C6C6FF"]},
+    {"code":"41500","material":"ABS-GF","id":"GFB50","name":"Verde","en":"Green","colors":["#61BF36FF"]},
+    {"code":"41101","material":"ABS-GF","id":"GFB50","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"41200","material":"ABS-GF","id":"GFB50","name":"Rosso","en":"Red","colors":["#E83100FF"]},
+    {"code":"41100","material":"ABS-GF","id":"GFB50","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"41400","material":"ABS-GF","id":"GFB50","name":"Giallo","en":"Yellow","colors":["#FFE133FF"]},
+    {"code":"46101","material":"ASA-CF","id":"GFB51","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"60102","material":"PC","id":"GFC00","name":"Nero trasparente","en":"Clear Black","colors":["#68686580"]},
+    {"code":"60103","material":"PC","id":"GFC00","name":"Trasparente","en":"Transparent","colors":["#00000000"]},
+    {"code":"60101","material":"PC","id":"GFC00","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"60100","material":"PC","id":"GFC00","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"63102","material":"PC FR","id":"GFC01","name":"Grigio","en":"Gray","colors":["#A8A8AAFF"]},
+    {"code":"63100","material":"PC FR","id":"GFC01","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"63101","material":"PC FR","id":"GFC01","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"32300","material":"PETG Translucent","id":"GFG01","name":"Arancione traslucido","en":"Translucent Orange","colors":["#FF911A80"]},
+    {"code":"32600","material":"PETG Translucent","id":"GFG01","name":"Azzurro traslucido","en":"Translucent Light Blue","colors":["#61B0FF80"]},
+    {"code":"32101","material":"PETG Translucent","id":"GFG01","name":"Trasparente","en":"Clear","colors":["#00000000"]},
+    {"code":"32100","material":"PETG Translucent","id":"GFG01","name":"Grigio traslucido","en":"Translucent Gray","colors":["#8E8E8E80"]},
+    {"code":"32500","material":"PETG Translucent","id":"GFG01","name":"Oliva traslucido","en":"Translucent Olive","colors":["#748C4580"]},
+    {"code":"32501","material":"PETG Translucent","id":"GFG01","name":"Verde petrolio traslucido","en":"Translucent Teal","colors":["#77EDD780"]},
+    {"code":"32800","material":"PETG Translucent","id":"GFG01","name":"Marrone traslucido","en":"Translucent Brown","colors":["#C9A38180"]},
+    {"code":"32700","material":"PETG Translucent","id":"GFG01","name":"Viola traslucido","en":"Translucent Purple","colors":["#D6ABFF80"]},
+    {"code":"32200","material":"PETG Translucent","id":"GFG01","name":"Rosa traslucido","en":"Translucent Pink","colors":["#F9C1BD80"]},
+    {"code":"33300","material":"PETG HF","id":"GFG02","name":"Arancione","en":"Orange","colors":["#F75403FF"]},
+    {"code":"33600","material":"PETG HF","id":"GFG02","name":"Blu","en":"Blue","colors":["#002E96FF"]},
+    {"code":"33601","material":"PETG HF","id":"GFG02","name":"Blu lago","en":"Lake Blue","colors":["#1F79E5FF"]},
+    {"code":"33101","material":"PETG HF","id":"GFG02","name":"Grigio","en":"Gray","colors":["#ADB1B2FF"]},
+    {"code":"33103","material":"PETG HF","id":"GFG02","name":"Grigio scuro","en":"Dark Gray","colors":["#515151FF"]},
+    {"code":"33500","material":"PETG HF","id":"GFG02","name":"Verde","en":"Green","colors":["#00AE42FF"]},
+    {"code":"33501","material":"PETG HF","id":"GFG02","name":"Verde lime","en":"Lime Green","colors":["#6EE53CFF"]},
+    {"code":"33502","material":"PETG HF","id":"GFG02","name":"Verde foresta","en":"Forest Green","colors":["#39541AFF"]},
+    {"code":"33102","material":"PETG HF","id":"GFG02","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"33801","material":"PETG HF","id":"GFG02","name":"Cognac","en":"Peanut Brown","colors":["#875718FF"]},
+    {"code":"33200","material":"PETG HF","id":"GFG02","name":"Rosso","en":"Red","colors":["#BC0900FF"]},
+    {"code":"33100","material":"PETG HF","id":"GFG02","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"33400","material":"PETG HF","id":"GFG02","name":"Giallo","en":"Yellow","colors":["#FFD00BFF"]},
+    {"code":"33401","material":"PETG HF","id":"GFG02","name":"Panna","en":"Cream","colors":["#F9DFB9FF"]},
+    {"code":"31600","material":"PETG-CF","id":"GFG50","name":"Blu indaco","en":"Indigo Blue","colors":["#324585FF"]},
+    {"code":"31101","material":"PETG-CF","id":"GFG50","name":"Grigio titanio","en":"Titan Gray","colors":["#565656FF"]},
+    {"code":"31500","material":"PETG-CF","id":"GFG50","name":"Verde malachite","en":"Malachite Green","colors":["#16b08eFF"]},
+    {"code":"31100","material":"PETG-CF","id":"GFG50","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"31700","material":"PETG-CF","id":"GFG50","name":"Viola","en":"Violet Purple","colors":["#583061FF"]},
+    {"code":"31200","material":"PETG-CF","id":"GFG50","name":"Rosso mattone","en":"Brick Red","colors":["#9f332aFF"]},
+    {"code":"70100","material":"PAHT-CF","id":"GFN04","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"72100","material":"PA6-CF","id":"GFN05","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"73100","material":"PPA-CF","id":"GFN06","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"72600","material":"PA6-GF","id":"GFN08","name":"Blu","en":"Blue","colors":["#75AED8FF"]},
+    {"code":"72102","material":"PA6-GF","id":"GFN08","name":"Bianco","en":"White","colors":["#EAEAE4FF"]},
+    {"code":"72103","material":"PA6-GF","id":"GFN08","name":"Grigio","en":"Gray","colors":["#353533FF"]},
+    {"code":"72500","material":"PA6-GF","id":"GFN08","name":"Lime","en":"Lime","colors":["#C5ED48FF"]},
+    {"code":"72104","material":"PA6-GF","id":"GFN08","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"72800","material":"PA6-GF","id":"GFN08","name":"Marrone","en":"Brown","colors":["#5B492FFF"]},
+    {"code":"72200","material":"PA6-GF","id":"GFN08","name":"Arancione","en":"Orange","colors":["#FF4800FF"]},
+    {"code":"72400","material":"PA6-GF","id":"GFN08","name":"Giallo","en":"Yellow","colors":["#FFCE00FF"]},
+    {"code":"65500","material":"Support for PA/PET","id":"GFS03","name":"Verde","en":"Green","colors":["#C0DF16FF"]},
+    {"code":"66400","material":"PVA","id":"GFS04","name":"Trasparente","en":"Clear","colors":["#F0F1A880"]},
+    {"code":"65102","material":"Support for PLA/PETG","id":"GFS05","name":"Naturale","en":"Nature","colors":["#00000000"]},
+    {"code":"65103","material":"Support for PLA/PETG","id":"GFS05","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"66100","material":"Support for ABS","id":"GFS06","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"71100","material":"PET-CF","id":"GFT01","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"76100","material":"PPS-CF","id":"GFT02","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"51600","material":"TPU 95A HF","id":"GFU00","name":"Blu","en":"Blue","colors":["#0072CEFF"]},
+    {"code":"51101","material":"TPU 95A HF","id":"GFU00","name":"Grigio","en":"Gray","colors":["#898D8DFF"]},
+    {"code":"51100","material":"TPU 95A HF","id":"GFU00","name":"Nero","en":"Black","colors":["#101820FF"]},
+    {"code":"51200","material":"TPU 95A HF","id":"GFU00","name":"Rosso","en":"Red","colors":["#C8102EFF"]},
+    {"code":"51102","material":"TPU 95A HF","id":"GFU00","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"51400","material":"TPU 95A HF","id":"GFU00","name":"Giallo","en":"Yellow","colors":["#F3E600FF"]},
+    {"code":"50101","material":"TPU 95A","id":"GFU01","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"50100","material":"TPU 95A","id":"GFU01","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"53600","material":"TPU for AMS","id":"GFU02","name":"Blu","en":"Blue","colors":["#5898DDFF"]},
+    {"code":"53102","material":"TPU for AMS","id":"GFU02","name":"Grigio","en":"Gray","colors":["#939393FF"]},
+    {"code":"53500","material":"TPU for AMS","id":"GFU02","name":"Verde neon","en":"Neon Green","colors":["#90FF1AFF"]},
+    {"code":"53101","material":"TPU for AMS","id":"GFU02","name":"Nero","en":"Black","colors":["#000000FF"]},
+    {"code":"53200","material":"TPU for AMS","id":"GFU02","name":"Rosso","en":"Red","colors":["#ED0000FF"]},
+    {"code":"53100","material":"TPU for AMS","id":"GFU02","name":"Bianco","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"53400","material":"TPU for AMS","id":"GFU02","name":"Giallo","en":"Yellow","colors":["#F9EF41FF"]},
+    {"code":"16100","material":"PLA Lite","id":"GFA18","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"16400","material":"PLA Lite","id":"GFA18","name":"Yellow","en":"Yellow","colors":["#EFE255FF"]},
+    {"code":"16103","material":"PLA Lite","id":"GFA18","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"16600","material":"PLA Lite","id":"GFA18","name":"Cyan","en":"Cyan","colors":["#4DAFDAFF"]},
+    {"code":"16200","material":"PLA Lite","id":"GFA18","name":"Red","en":"Red","colors":["#C6001AFF"]},
+    {"code":"16101","material":"PLA Lite","id":"GFA18","name":"Grigio","en":"Gray","colors":["#999D9DFF"]},
+    {"code":"13210","material":"PLA Translucent","id":"GFA17","name":"Red","en":"Red","colors":["#B5001180"]},
+    {"code":"13211","material":"PLA Translucent","id":"GFA17","name":"Cherry Pink","en":"Cherry Pink","colors":["#F5B6CD80"]},
+    {"code":"13301","material":"PLA Translucent","id":"GFA17","name":"Orange","en":"Orange","colors":["#F74E0280"]},
+    {"code":"13410","material":"PLA Translucent","id":"GFA17","name":"Mellow Yellow","en":"Mellow Yellow","colors":["#F5DBAB80"]},
+    {"code":"13510","material":"PLA Translucent","id":"GFA17","name":"Light Jade","en":"Light Jade","colors":["#96D8AF80"]},
+    {"code":"13610","material":"PLA Translucent","id":"GFA17","name":"Ice Blue","en":"Ice Blue","colors":["#B8CDE980"]},
+    {"code":"13611","material":"PLA Translucent","id":"GFA17","name":"Blue","en":"Blue","colors":["#0047BB80"]},
+    {"code":"13612","material":"PLA Translucent","id":"GFA17","name":"Teal","en":"Teal","colors":["#009FA180"]},
+    {"code":"13710","material":"PLA Translucent","id":"GFA17","name":"Purple","en":"Purple","colors":["#8344B080"]},
+    {"code":"13711","material":"PLA Translucent","id":"GFA17","name":"Lavender","en":"Lavender","colors":["#B8ACD680"]},
+    {"code":"13906","material":"PLA Silk","id":"GFA05","name":"South Beach","en":"South Beach","colors":["#F772A4FF","#00918BFF"]},
+    {"code":"13909","material":"PLA Silk","id":"GFA05","name":"Aurora Purple","en":"Aurora Purple","colors":["#7F3696FF","#006EC9FF"]},
+    {"code":"13912","material":"PLA Silk","id":"GFA05","name":"Dawn Radiance","en":"Dawn Radiance","colors":["#EC984CFF","#6CD4BCFF","#A66EB9FF","#D87694FF"]},
+    {"code":"51103","material":"TPU 90A","id":"GFU03","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"51105","material":"TPU 90A","id":"GFU03","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"51305","material":"TPU 85A","id":"GFU04","name":"Neon Orange","en":"Neon Orange","colors":["#F68B1BFF"]},
+    {"code":"51500","material":"TPU 85A","id":"GFU04","name":"Light Cyan","en":"Light Cyan","colors":["#C3E2D6FF"]},
+    {"code":"51900","material":"TPU 90A","id":"GFU03","name":"Frozen","en":"Frozen","colors":["#40B6E4FF","#FFFFFFFF"]},
+    {"code":"51901","material":"TPU 90A","id":"GFU03","name":"Blaze","en":"Blaze","colors":["#D21B3CFF","#F1AAA8FF"]},
+    {"code":"65104","material":"Support for PLA","id":"GFS02","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"12104","material":"PLA Tough+","id":"GFA10","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"12105","material":"PLA Tough+","id":"GFA10","name":"Gray","en":"Gray","colors":["#AFB1AEFF"]},
+    {"code":"12106","material":"PLA Tough+","id":"GFA10","name":"Silver","en":"Silver","colors":["#959698FF"]},
+    {"code":"12107","material":"PLA Tough+","id":"GFA10","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"12301","material":"PLA Tough+","id":"GFA10","name":"Orange","en":"Orange","colors":["#DC3A27FF"]},
+    {"code":"12401","material":"PLA Tough+","id":"GFA10","name":"Yellow","en":"Yellow","colors":["#F4D53FFF"]},
+    {"code":"12601","material":"PLA Tough+","id":"GFA10","name":"Cyan","en":"Cyan","colors":["#009BD8FF"]},
+    {"code":"13100","material":"PLA Metal","id":"GFA02","name":"Iron Gray Metallic","en":"Iron Gray Metallic","colors":["#43403DFF"]},
+    {"code":"13400","material":"PLA Metal","id":"GFA02","name":"Iridium Gold Metallic","en":"Iridium Gold Metallic","colors":["#B39B84FF"]},
+    {"code":"13500","material":"PLA Metal","id":"GFA02","name":"Oxide Green Metallic","en":"Oxide Green Metallic","colors":["#1D7C6AFF"]},
+    {"code":"13600","material":"PLA Metal","id":"GFA02","name":"Cobalt Blue Metallic","en":"Cobalt Blue Metallic","colors":["#39699EFF"]},
+    {"code":"13800","material":"PLA Metal","id":"GFA02","name":"Copper Brown Metallic","en":"Copper Brown Metallic","colors":["#AA6443FF"]},
+    {"code":"16601","material":"PLA Lite","id":"GFA18","name":"Blue","en":"Blue","colors":["#004EA8FF"]},
+    {"code":"16401","material":"PLA Lite","id":"GFA18","name":"Sunflower Yellow","en":"Sunflower Yellow","colors":["#FFB549FF"]},
+    {"code":"16501","material":"PLA Lite","id":"GFA18","name":"Green","en":"Green","colors":["#00BB31FF"]},
+    {"code":"16301","material":"PLA Lite","id":"GFA18","name":"Orange","en":"Orange","colors":["#FF671FFF"]},
+    {"code":"16700","material":"PLA Lite","id":"GFA18","name":"Matte Beige","en":"Matte Beige","colors":["#ECC3B2FF"]},
+    {"code":"16800","material":"PLA Lite","id":"GFA18","name":"Cocoa Brown","en":"Cocoa Brown","colors":["#745335FF"]},
+    {"code":"16102","material":"PLA Lite","id":"GFA18","name":"Dark Gray","en":"Dark Gray","colors":["#8c8b8cFF"]},
+    {"code":"13913","material":"PLA Silk","id":"GFA05","name":"Mystic Magenta","en":"Mystic Magenta","colors":["#720062FF","#3a913fFF"]},
+    {"code":"13916","material":"PLA Silk","id":"GFA05","name":"Phantom Blue","en":"Phantom Blue","colors":["#00629bFF","#000000FF"]},
+    {"code":"51601","material":"TPU 90A","id":"GFU03","name":"Crystal Blue","en":"Crystal Blue","colors":["#7eb4e180"]},
+    {"code":"51106","material":"TPU 90A","id":"GFU03","name":"Quicksilver","en":"Quicksilver","colors":["#9ea2a2FF"]},
+    {"code":"51201","material":"TPU 85A","id":"GFU04","name":"Rose Beige/Flesh","en":"Rose Beige/Flesh","colors":["#F3CFB2FF"]},
+    {"code":"51700","material":"TPU 90A","id":"GFU03","name":"Grape Jelly","en":"Grape Jelly","colors":["#D6ABFF80"]},
+    {"code":"51107","material":"TPU 85A","id":"GFU04","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"51501","material":"TPU 85A","id":"GFU04","name":"Lime Green","en":"Lime Green","colors":["#CDEA80FF"]},
+    {"code":"51800","material":"TPU 90A","id":"GFU03","name":"Cocoa Brown","en":"Cocoa Brown","colors":["#5C4738FF"]},
+    {"code":"30105","material":"PETG Basic","id":"GFG00","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"30106","material":"PETG Basic","id":"GFG00","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"30107","material":"PETG Basic","id":"GFG00","name":"Gray","en":"Gray","colors":["#7F7E83FF"]},
+    {"code":"30402","material":"PETG Basic","id":"GFG00","name":"Yellow","en":"Yellow","colors":["#FCE300FF"]},
+    {"code":"30201","material":"PETG Basic","id":"GFG00","name":"Red","en":"Red","colors":["#D6001CFF"]},
+    {"code":"30603","material":"PETG Basic","id":"GFG00","name":"Reflex Blue","en":"Reflex Blue","colors":["#001489FF"]},
+    {"code":"30800","material":"PETG Basic","id":"GFG00","name":"Dark Brown","en":"Dark Brown","colors":["#4f2c1dFF"]},
+    {"code":"30502","material":"PETG Basic","id":"GFG00","name":"Green","en":"Green","colors":["#009639FF"]},
+    {"code":"30301","material":"PETG Basic","id":"GFG00","name":"Orange","en":"Orange","colors":["#FF671FFF"]},
+    {"code":"30503","material":"PETG Basic","id":"GFG00","name":"Pine Green","en":"Pine Green","colors":["#034638FF"]},
+    {"code":"30604","material":"PETG Basic","id":"GFG00","name":"Navy Blue","en":"Navy Blue","colors":["#0086d6FF"]},
+    {"code":"30108","material":"PETG Basic","id":"GFG00","name":"Misty Blue","en":"Misty Blue","colors":["#688197FF"]},
+    {"code":"30403","material":"PETG Basic","id":"GFG00","name":"Dark Beige","en":"Dark Beige","colors":["#dbc8b6FF"]},
+    {"code":"17100","material":"PLA Pure","id":"GFA19","name":"Pure White","en":"Pure White","colors":["#FFFFFFFF"]},
+    {"code":"17101","material":"PLA Pure","id":"GFA19","name":"Absolute Black","en":"Absolute Black","colors":["#000000FF"]},
+    {"code":"17200","material":"PLA Pure","id":"GFA19","name":"Milky Pink","en":"Milky Pink","colors":["#f7ced7FF"]},
+    {"code":"17600","material":"PLA Pure","id":"GFA19","name":"Baby Blue","en":"Baby Blue","colors":["#a4dbe8FF"]},
+    {"code":"17300","material":"PLA Pure","id":"GFA19","name":"Apricot","en":"Apricot","colors":["#ffb673FF"]},
+    {"code":"30701","material":"PETG Basic","id":"GFG00","name":"Purple","en":"Purple","colors":["#8A75D1FF"]},
+    {"code":"30404","material":"PETG Basic","id":"GFG00","name":"Sunflower Yellow","en":"Sunflower Yellow","colors":["#FFB81CFF"]},
+    {"code":"30504","material":"PETG Basic","id":"GFG00","name":"Bright Green","en":"Bright Green","colors":["#97D700FF"]},
+    {"code":"30702","material":"PETG Basic","id":"GFG00","name":"Hot Pink","en":"Hot Pink","colors":["#F277C6FF"]},
+    {"code":"35100","material":"PETG Matte","id":"GFG03","name":"White","en":"White","colors":["#FFFFFFFF"]},
+    {"code":"35101","material":"PETG Matte","id":"GFG03","name":"Black","en":"Black","colors":["#000000FF"]},
+    {"code":"35500","material":"PETG Matte","id":"GFG03","name":"Lime","en":"Lime","colors":["#c0df16FF"]},
+    {"code":"35102","material":"PETG Matte","id":"GFG03","name":"Gray","en":"Gray","colors":["#7F7E83FF"]},
+    {"code":"35700","material":"PETG Matte","id":"GFG03","name":"Pink","en":"Pink","colors":["#FABBCBFF"]},
+    {"code":"35600","material":"PETG Matte","id":"GFG03","name":"Baby Blue","en":"Baby Blue","colors":["#B9D9EBFF"]},
+    {"code":"35702","material":"PETG Matte","id":"GFG03","name":"Violet","en":"Violet","colors":["#A7A4E0FF"]},
+    {"code":"35501","material":"PETG Matte","id":"GFG03","name":"Avocado Green","en":"Avocado Green","colors":["#bce194FF"]},
+  ];
+
+  const bambuColorsByCode = new Map(bambuOfficialColors.map(entry => [entry.code, entry]));
+  const normalizeColorText = value => String(value || "").normalize("NFKC").trim().toLocaleLowerCase("it-IT").replace(/\s+/g, " ");
+
+  function resolveBambuColor(value, context = {}) {
+    if (context.brand && canonicalizeBrand(context.brand) !== "Bambu Lab") return null;
+    const text = String(value || "");
+    const code = text.match(/\b\d{5}\b/)?.[0] || ((!text || text === context.variant) ? String(context.color_code || "").match(/^\d{5}$/)?.[0] : "");
+    if (code) return bambuColorsByCode.get(code) || null;
+    // Un nome senza codice è risolto solo con marca e famiglia esplicite.
+    if (!context.brand || !context.material) return null;
+    const candidates = bambuOfficialColors.filter(entry => canonicalizeMaterial(entry.material) === canonicalizeMaterial(context.material)
+      && [entry.name, entry.en].some(name => normalizeColorText(name) === normalizeColorText(text)));
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function getColorDisplayName(value, context = {}) {
+    const text = String(value || "").trim();
+    const entry = resolveBambuColor(text, context);
+    if (!entry) return /^\d{5}$/.test(text) && (!context.brand || canonicalizeBrand(context.brand) === "Bambu Lab")
+      ? `${text} · nome non verificato` : text || "N/D";
+    const name = `${entry.name} (${entry.code})`;
+    const prefix = text.replace(/\(?\b\d{5}\b\)?/g, "").trim();
+    const knownName = !prefix || [entry.name, entry.en, ...defaultColors].some(candidate => normalizeColorText(candidate) === normalizeColorText(prefix));
+    return knownName ? name : `${text} · ${name}`;
+  }
+
+  function getColorBackground(value, context = {}) {
+    const entry = resolveBambuColor(value, context);
+    if (!entry) return getColorHex(value, context);
+    const colors = entry.colors.length > 1 ? entry.colors : [entry.colors[0], entry.colors[0]];
+    const colorLayer = `linear-gradient(135deg, ${colors.join(", ")})`;
+    return entry.colors.some(color => !color.endsWith("FF"))
+      ? `${colorLayer}, repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 0 / 10px 10px` : colorLayer;
+  }
+
   const defaultColors = [
     "Nero",
     "Bianco",
@@ -729,39 +1086,6 @@
     "Black Marble": "#2d2d2d",
     
     // === BAMBU LAB PLA BASIC (codici 10xxx) ===
-    "10100": "#FFFFFF", // Bianco giada / Jade White
-    "10101": "#000000", // Nero / Black
-    "10102": "#8E9089", // Grigio / Gray
-    "10103": "#515151", // Dark Gray
-    "10200": "#EB3A3A", // Rosso / Red
-    "10201": "#C12E1F", // Rosso scuro / Dark Red
-    "10203": "#F55A74", // Rosa / Pink
-    "10205": "#9D2235", // Rosso bordeaux / Maroon Red
-    "10300": "#F75403", // Arancione / Orange
-    "10301": "#FF9016", // Pumpkin Orange
-    "10400": "#FFD00B", // Giallo / Yellow
-    "10401": "#E4BD68", // Oro / Gold
-    "10402": "#FEC600", // Sunflower Yellow
-    "10403": "#F4D53F", // Lemon Yellow
-    "10500": "#00AE42", // Verde / Green (Bambu Green)
-    "10501": "#3F8E43", // Mistletoe Green
-    "10502": "#BECF00", // Bright Green
-    "10503": "#61C680", // Grass Green
-    "10504": "#6EE53C", // Lime Green
-    "10505": "#39541A", // Forest Green
-    "10600": "#002E96", // Blu / Blue
-    "10601": "#0056B8", // Cobalt Blue
-    "10602": "#1F79E5", // Lake Blue
-    "10603": "#0A2989", // Dark Blue
-    "10605": "#00B1B7", // Turchese / Turquoise
-    "10606": "#009BD8", // Cyan
-    "10700": "#5E43B7", // Viola / Purple
-    "10701": "#482960", // Indigo Purple
-    "10702": "#AE96D4", // Lilac Purple
-    "10800": "#9D432C", // Marrone / Brown
-    "10801": "#847D48", // Bronzo / Bronze
-    "10802": "#6F5034", // Marrone cacao / Cocoa Brown
-    "10803": "#875718", // Peanut Brown
     "Bianco giada": "#FFFFFF",
     "Jade White": "#FFFFFF",
     "Maroon Red": "#9D2235",
@@ -781,8 +1105,6 @@
     "Sunflower Yellow": "#FEC600",
     
     // === BAMBU LAB PLA MATTE (codici 11xxx) ===
-    "11101": "#000000", // Carbone / Charcoal
-    "11201": "#E8AFCF", // Rosa sakura / Sakura Pink
     Carbone: "#000000",
     Charcoal: "#000000",
     "Rosa sakura": "#E8AFCF",
@@ -812,24 +1134,8 @@
     "Nardo Gray": "#757575",
     
     // === BAMBU LAB PLA TOUGH+ (codici 12xxx) ===
-    "12104": "#000000", // Nero / Black
-    "12105": "#AFB1AE", // Gray
-    "12106": "#959698", // Silver
-    "12107": "#FFFFFF", // White
-    "12201": "#EB3A3A", // Red
-    "12301": "#DC3A27", // Orange
-    "12401": "#F4D53F", // Yellow
-    "12501": "#00AE42", // Green
-    "12601": "#009BD8", // Cyan
-    "12701": "#5E43B7", // Purple
     
     // === BAMBU LAB PLA WOOD (codici 13xxx) ===
-    "13107": "#4F3F24", // Noce nero / Black Walnut
-    "13106": "#C4A77D", // White Oak
-    "13204": "#8B4513", // Rosewood
-    "13505": "#DEB887", // Classic Birch
-    "13801": "#A0522D", // Clay Brown
-    "13403": "#CC7722", // Ochre Yellow
     "Noce nero": "#4F3F24",
     "Black Walnut": "#4F3F24",
     "White Oak": "#C4A77D",
@@ -839,15 +1145,8 @@
     "Ochre Yellow": "#CC7722",
     
     // === BAMBU LAB PETG-CF (codici 31xxx) ===
-    "31100": "#000000", // Nero
     
     // === BAMBU LAB PETG TRANSLUCENT (codici 32xxx) ===
-    "32100": "#8E8E8E", // Grigio traslucido
-    "32101": "#E8E8E8", // Trasparente
-    "32200": "#F9C1BD", // Rosa traslucido
-    "32300": "#FF911A", // Arancione traslucido
-    "32501": "#77EDD7", // Teal traslucido
-    "32700": "#D6ABFF", // Viola traslucido
     "Grigio traslucido": "#8E8E8E",
     "Translucent Gray": "#8E8E8E",
     "Rosa traslucido": "#F9C1BD",
@@ -858,52 +1157,19 @@
     "Translucent Orange": "#FF911A",
     
     // === BAMBU LAB PETG HF (codici 33xxx) ===
-    "33100": "#FFFFFF", // Bianco / White
-    "33101": "#ADB1B2", // Grigio / Gray
-    "33102": "#000000", // Nero / Black
-    "33103": "#515151", // Dark Gray
-    "33200": "#EB3A3A", // Rosso / Red
-    "33201": "#C12E1F", // Dark Red
-    "33202": "#9D2235", // Maroon Red
-    "33300": "#F75403", // Arancione / Orange
-    "33301": "#FF9016", // Pumpkin Orange
-    "33400": "#FFD00B", // Giallo / Yellow
-    "33401": "#F9DFB9", // Crema / Cream
-    "33402": "#E4BD68", // Gold
-    "33500": "#00AE42", // Verde (Bambu Green!)
-    "33501": "#6EE53C", // Lime Green
-    "33502": "#39541A", // Forest Green
-    "33503": "#3F8E43", // Mistletoe Green
-    "33600": "#002E96", // Blu / Blue
-    "33601": "#1F79E5", // Lake Blue
-    "33602": "#0056B8", // Cobalt Blue
-    "33603": "#0A2989", // Dark Blue
-    "33700": "#5E43B7", // Viola / Purple
-    "33701": "#482960", // Indigo Purple
-    "33800": "#9D432C", // Marrone / Brown
-    "33801": "#875718", // Peanut Brown
-    "33802": "#6F5034", // Cocoa Brown
     "Lake Blue": "#1F79E5",
     "Forest Green": "#39541A",
     "Lime Green": "#6EE53C",
     "Peanut Brown": "#875718",
     
     // === BAMBU LAB ASA-CF (codici 46xxx) ===
-    "46100": "#F5F1DD", // ASA Aero White
-    "46101": "#000000", // ASA-CF Nero
     
     // === BAMBU LAB SUPPORT (codici 65xxx, 66xxx) ===
-    "65102": "#E8DCC8", // Naturale - Support PLA/PETG
-    "65500": "#4CAF50", // Green - Support PA/PET
-    "66100": "#FFFFFF", // Support ABS White
-    "66400": "#E0E0E0", // PVA Trasparente
     Naturale: "#E8DCC8",
     
     // === BAMBU LAB PA6-CF (codici 72xxx) ===
-    "72100": "#000000", // PA6-CF Nero
     
     // === BAMBU LAB PET-CF (codici 71xxx) ===
-    "71100": "#000000", // PET-CF Black
     
     // === BAMBU LAB PLA-CF ===
     "Burgundy Red": "#951e23",
@@ -921,21 +1187,6 @@
     "Titan Gray": "#565656",
     
     // === BAMBU LAB TPU (codici 40xxx) ===
-    "40100": "#FFFFFF", // White
-    "40101": "#000000", // Black
-    "40102": "#8E9089", // Gray
-    "40103": "#515151", // Dark Gray
-    "40200": "#EB3A3A", // Red
-    "40201": "#C12E1F", // Dark Red
-    "40300": "#F75403", // Orange
-    "40400": "#FFD00B", // Yellow
-    "40500": "#00AE42", // Green
-    "40501": "#3F8E43", // Mistletoe Green
-    "40600": "#002E96", // Blue
-    "40601": "#1F79E5", // Lake Blue
-    "40700": "#5E43B7", // Purple
-    "40800": "#9D432C", // Brown
-    "40801": "#875718", // Peanut Brown
     "TPU White": "#FFFFFF",
     "TPU Black": "#000000",
     "TPU Gray": "#8E9089",
@@ -1386,26 +1637,17 @@
     return { color: styles.getPropertyValue("--gf-green").trim() || "#73BF69", cls: "high-stock" };
   }
 
-  function getColorHex(colorName) {
+  function getColorHex(colorName, context = {}) {
+    const official = resolveBambuColor(colorName, context);
+    if (official) return official.colors[0].slice(0, 7);
+    // Non attribuire ai codici sconosciuti le vecchie associazioni non verificate.
+    if (/\b\d{5}\b/.test(String(colorName || ""))) return "#e5e7eb";
+
     if (typeof colorName !== "string" || !colorName) return "#e5e7eb";
     
     // Prima prova match diretto
     const direct = colorHexMap[colorName];
     if (typeof direct === "string") return direct;
-    
-    // Estrai codice Bambu se presente (es. "Nero (33102)" -> "33102")
-    const codeMatch = colorName.match(/\((\d{5})\)/);
-    if (codeMatch) {
-      const bambuCode = codeMatch[1];
-      if (colorHexMap[bambuCode]) return colorHexMap[bambuCode];
-    }
-    
-    // Cerca anche solo il codice numerico se presente
-    const numMatch = colorName.match(/\b(\d{5})\b/);
-    if (numMatch) {
-      const code = numMatch[1];
-      if (colorHexMap[code]) return colorHexMap[code];
-    }
     
     const lower = colorName.toLowerCase();
 
@@ -1449,133 +1691,9 @@
     return "#e5e7eb";
   }
 
-  // Funzione per ottenere il nome del colore da un codice
   function getColorNameFromCode(code) {
-    if (!code || typeof code !== 'string') return "";
-    
-    // Mappa codici -> nomi colori
-    const codeToNameMap = {
-      // PLA BASIC (10xxx)
-      "10100": "Bianco giada / Jade White",
-      "10101": "Nero / Black",
-      "10102": "Grigio / Gray",
-      "10103": "Grigio scuro / Dark Gray",
-      "10200": "Rosso / Red",
-      "10201": "Rosso scuro / Dark Red",
-      "10203": "Rosa / Pink",
-      "10205": "Rosso bordeaux / Maroon Red",
-      "10300": "Arancione / Orange",
-      "10301": "Arancione zucca / Pumpkin Orange",
-      "10400": "Giallo / Yellow",
-      "10401": "Oro / Gold",
-      "10402": "Giallo girasole / Sunflower Yellow",
-      "10403": "Giallo limone / Lemon Yellow",
-      "10500": "Verde / Green (Bambu Green)",
-      "10501": "Verde vischio / Mistletoe Green",
-      "10502": "Verde brillante / Bright Green",
-      "10503": "Verde erba / Grass Green",
-      "10504": "Verde lime / Lime Green",
-      "10505": "Verde foresta / Forest Green",
-      "10600": "Blu / Blue",
-      "10601": "Blu cobalto / Cobalt Blue",
-      "10602": "Blu lago / Lake Blue",
-      "10603": "Blu scuro / Dark Blue",
-      "10605": "Turchese / Turquoise",
-      "10606": "Ciano / Cyan",
-      "10700": "Viola / Purple",
-      "10701": "Viola indaco / Indigo Purple",
-      "10702": "Viola lilla / Lilac Purple",
-      "10800": "Marrone / Brown",
-      "10801": "Bronzo / Bronze",
-      "10802": "Marrone cacao / Cocoa Brown",
-      "10803": "Marrone arachide / Peanut Brown",
-      // PLA MATTE (11xxx)
-      "11101": "Carbone / Charcoal",
-      "11201": "Rosa sakura / Sakura Pink",
-      // PLA TOUGH+ (12xxx)
-      "12104": "Nero / Black",
-      "12105": "Grigio / Gray",
-      "12106": "Argento / Silver",
-      "12107": "Bianco / White",
-      "12201": "Rosso / Red",
-      "12301": "Arancione / Orange",
-      "12401": "Giallo / Yellow",
-      "12501": "Verde / Green",
-      "12601": "Ciano / Cyan",
-      "12701": "Viola / Purple",
-      // PLA WOOD (13xxx)
-      "13107": "Noce nero / Black Walnut",
-      "13106": "Quercia bianca / White Oak",
-      "13204": "Palissandro / Rosewood",
-      "13505": "Betulla classica / Classic Birch",
-      "13801": "Marrone argilla / Clay Brown",
-      "13403": "Giallo ocra / Ochre Yellow",
-      // PETG-CF (31xxx)
-      "31100": "Nero / Black",
-      // PETG TRANSLUCENT (32xxx)
-      "32100": "Grigio traslucido / Translucent Gray",
-      "32101": "Trasparente / Transparent",
-      "32200": "Rosa traslucido / Translucent Pink",
-      "32300": "Arancione traslucido / Translucent Orange",
-      "32501": "Teal traslucido / Translucent Teal",
-      "32700": "Viola traslucido / Translucent Purple",
-      // PETG HF (33xxx)
-      "33100": "Bianco / White",
-      "33101": "Grigio / Gray",
-      "33102": "Nero / Black",
-      "33103": "Grigio scuro / Dark Gray",
-      "33200": "Rosso / Red",
-      "33201": "Rosso scuro / Dark Red",
-      "33202": "Rosso bordeaux / Maroon Red",
-      "33300": "Arancione / Orange",
-      "33301": "Arancione zucca / Pumpkin Orange",
-      "33400": "Giallo / Yellow",
-      "33401": "Crema / Cream",
-      "33402": "Oro / Gold",
-      "33500": "Verde / Green (Bambu Green)",
-      "33501": "Verde lime / Lime Green",
-      "33502": "Verde foresta / Forest Green",
-      "33503": "Verde vischio / Mistletoe Green",
-      "33600": "Blu / Blue",
-      "33601": "Blu lago / Lake Blue",
-      "33602": "Blu cobalto / Cobalt Blue",
-      "33603": "Blu scuro / Dark Blue",
-      "33700": "Viola / Purple",
-      "33701": "Viola indaco / Indigo Purple",
-      "33800": "Marrone / Brown",
-      "33801": "Marrone arachide / Peanut Brown",
-      "33802": "Marrone cacao / Cocoa Brown",
-      // TPU (40xxx)
-      "40100": "Bianco / White",
-      "40101": "Nero / Black",
-      "40102": "Grigio / Gray",
-      "40103": "Grigio scuro / Dark Gray",
-      "40200": "Rosso / Red",
-      "40201": "Rosso scuro / Dark Red",
-      "40300": "Arancione / Orange",
-      "40400": "Giallo / Yellow",
-      "40500": "Verde / Green",
-      "40501": "Verde vischio / Mistletoe Green",
-      "40600": "Blu / Blue",
-      "40601": "Blu lago / Lake Blue",
-      "40700": "Viola / Purple",
-      "40800": "Marrone / Brown",
-      "40801": "Marrone arachide / Peanut Brown",
-      // ASA-CF (46xxx)
-      "46100": "Bianco aero / ASA Aero White",
-      "46101": "Nero / ASA-CF Black",
-      // SUPPORT (65xxx, 66xxx)
-      "65102": "Naturale / Natural",
-      "65500": "Verde / Green",
-      "66100": "Bianco / Support ABS White",
-      "66400": "Trasparente / PVA Transparent",
-      // PA6-CF (72xxx)
-      "72100": "Nero / PA6-CF Black",
-      // PET-CF (71xxx)
-      "71100": "Nero / PET-CF Black"
-    };
-    
-    return codeToNameMap[code] || "";
+    const entry = bambuColorsByCode.get(String(code || ""));
+    return entry ? (entry.name === entry.en ? entry.name : `${entry.name} / ${entry.en}`) : "";
   }
 
   // Determina se un colore è scuro (per scegliere testo bianco o nero)
@@ -1598,9 +1716,11 @@
   }
 
   // Genera HTML per pill colorato completamente
-  function getColoredPillHtml(colorName) {
-    const hex = getColorHex(colorName);
-    const displayName = colorName || "N/D";
+  function getColoredPillHtml(colorName, context = {}) {
+    const hex = getColorHex(colorName, context);
+    const displayName = getColorDisplayName(colorName, context);
+    const official = resolveBambuColor(colorName, context);
+    const tooltip = displayName + (official ? ` · ${official.en} · ${official.material}` : "");
     const displayNameLower = displayName.toLowerCase();
     
     // Forza testo nero per colori bianchi/chiari specifici
@@ -1634,7 +1754,7 @@
       textClass = isDark ? "light-text" : "dark-text";
     }
     
-    return `<span class="pill-colored ${textClass}" style="background: ${hex};" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>`;
+    return `<span class="pill-colored ${textClass}" style="background: ${getColorBackground(colorName, context)};" title="${escapeHtml(tooltip)}">${resolveBambuColor(colorName, context)?.colors.length > 1 ? `<span style="background:var(--surface);color:var(--text-main);padding:0 .2rem;border-radius:.2rem">${escapeHtml(displayName)}</span>` : escapeHtml(displayName)}</span>`;
   }
 
   // =============================================
@@ -1681,7 +1801,12 @@
     container.replaceChildren(wrapper);
     function renderOptions(filter = searchInput.value) {
       optionsContainer.replaceChildren();
-      const colors = colorList.filter(color => color.toLowerCase().includes(filter.toLowerCase()));
+      const brand = options.brandHint || (containerId === "addColorDropdownContainer" ? document.getElementById("addBrandSelect")?.value : "");
+      const material = options.materialHint || (containerId === "addColorDropdownContainer" ? document.getElementById("addMaterialSelect")?.value : "");
+      const official = canonicalizeBrand(brand || "") === "Bambu Lab"
+        ? bambuOfficialColors.filter(entry => !material || canonicalizeMaterial(entry.material) === canonicalizeMaterial(material)) : [];
+      const colors = [...new Set([...colorList, ...official.map(entry => entry.code)])].filter(color =>
+        `${color} ${getColorNameFromCode(color)} ${bambuColorsByCode.get(color)?.en || ""}`.toLowerCase().includes(filter.toLowerCase()));
       colors.forEach(color => {
         const button = document.createElement("button");
         button.type = "button";
@@ -1689,11 +1814,11 @@
         button.dataset.value = color;
         const dot = document.createElement("span");
         dot.className = "color-dot";
-        dot.style.background = getColorHex(color);
+        dot.style.background = getColorBackground(color);
         const label = document.createElement("span");
         label.className = "color-name";
         const name = /^\d{5}$/.test(color) ? getColorNameFromCode(color) : null;
-        label.textContent = name ? color + " - " + name : color;
+        label.textContent = name ? color + " - " + name + " · " + bambuColorsByCode.get(color).material : color;
         button.append(dot, label);
         button.addEventListener("click", () => selectColorOption(wrapper, color, onSelect));
         optionsContainer.appendChild(button);
@@ -1803,8 +1928,8 @@
     if (value && value !== "__custom__") {
       hiddenInput.value = value;
       const hex = getColorHex(value);
-      colorDot.style.background = hex;
-      colorText.textContent = value;
+      colorDot.style.background = getColorBackground(value);
+      colorText.textContent = getColorDisplayName(value);
     } else {
       hiddenInput.value = "";
       colorDot.style.background = "#e5e7eb";
@@ -3912,7 +4037,7 @@
       const term = currentSearch.toLowerCase();
       filtered = filtered.filter((f) => {
         const hay = [f.brand, f.material, f.variant, f.color_code, f.packaging_type,
-          f.supplier, f.location, f.notes, ...(f.spools_variants || []), ...(f.spools_locations || [])]
+          f.supplier, f.location, f.notes, getColorDisplayName(f.variant, f), resolveBambuColor(f.variant, f)?.en, ...(f.spools_variants || []).map(value => getColorDisplayName(value, f)), ...(f.spools_locations || [])]
           .filter(Boolean).join(" ");
         return hay.toLowerCase().includes(term);
       });
@@ -4121,7 +4246,7 @@
       }
 
       // Usa il colore specifico del gruppo invece del colore principale
-      const pillHtml = getColoredPillHtml(group.color);
+      const pillHtml = getColoredPillHtml(group.color, f);
       
       const packagingLabel = f.packaging_type === "refill" ? "Ricarica" : "Bobina";
       const priceDisplay = f.unit_price != null ? "€" + formatNumber(f.unit_price, 2) : "-";
@@ -4320,9 +4445,9 @@
         pillHtml = `<span class="pill-colored light-text" style="background: linear-gradient(135deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #8b5cf6);" title="${escapeHtml(p.variant || "Multi-colore")}">${escapeHtml(p.variant || "Multi-colore")}</span>`;
         tr.style.background = "linear-gradient(90deg, rgba(239,68,68,0.08), rgba(245,158,11,0.08), rgba(34,197,94,0.08), rgba(59,130,246,0.08), rgba(139,92,246,0.08))";
       } else {
-        pillHtml = getColoredPillHtml(p.variant);
+        pillHtml = getColoredPillHtml(p.variant, p);
         // Apply subtle colored background to row
-        const colorHex = getColorHex(p.variant);
+        const colorHex = getColorHex(p.variant, p);
         if (colorHex && colorHex !== "#9ca3af" && colorHex !== "#e5e7eb") {
           tr.style.background = `linear-gradient(90deg, ${colorHex}15, ${colorHex}08, transparent)`;
         }
@@ -4511,7 +4636,7 @@
         </div>
       `;
 
-      const pillHtml = getColoredPillHtml(group.variant);
+      const pillHtml = getColoredPillHtml(group.variant, group);
 
       tr.innerHTML = `
         <td>${escapeHtml(group.brand || "-")}</td>
@@ -4600,13 +4725,13 @@
       if (lastOpen) row.classList.add("last-spool");
 
       // Get color for the name highlight
-      const colorHex = getColorHex(f.variant);
+      const colorHex = getColorHex(f.variant, f);
       const isDark = isColorDark(colorHex);
       const textClass = isDark ? "light-text" : "dark-text";
       
       const titleBrand = canonicalizeBrand(f.brand || "");
       const titleMaterial = f.material || "";
-      const titleVariant = f.variant || "";
+      const titleVariant = getColorDisplayName(f.variant, f);
       const detail =
         "Rotoli: " +
         stockSpools +
@@ -4901,7 +5026,7 @@
         
         // Colore del filamento - usa il colore specifico della bobina se disponibile
         const spoolVariant = spool.variant;
-        const colorHex = getColorHex(spoolVariant);
+        const colorHex = getColorBackground(spoolVariant, filament);
         const colorDot = document.createElement("div");
         colorDot.style.cssText = `width: 100%; height: 50px; border-radius: 0.375rem; background: ${colorHex}; margin-bottom: 0.5rem; border: 2px solid var(--border-subtle); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);`;
         
@@ -4916,7 +5041,9 @@
         
         const variantText = document.createElement("div");
         variantText.style.cssText = "font-size: 0.85rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
-        variantText.textContent = spoolVariant || "-";
+        variantText.textContent = getColorDisplayName(spoolVariant, filament);
+        variantText.title = variantText.textContent;
+        variantText.style.whiteSpace = "normal";
         
         // Calcola residuo e percentuale
         const fraction = spool.fraction;
@@ -5091,7 +5218,7 @@
         </div>
       `;
 
-      const pillHtml = getColoredPillHtml(group.variant);
+      const pillHtml = getColoredPillHtml(group.variant, group);
 
       tr.innerHTML = `
         <td>${escapeHtml(group.brand || "-")}</td>
@@ -5702,6 +5829,147 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  // Il registro resta nel suo snapshot. IndexedDB conserva solo l'autorizzazione
+  // alla cartella, che non può essere serializzata in un export JSON.
+  const FILE_BACKUP_INTERVAL_MS = 5 * 60 * 1000;
+  let fileBackupDirectory = null;
+  let fileBackupBusy = false;
+  let fileBackupTimer = null;
+  let fileBackupPayload = null;
+  let fileBackupGeneration = 0;
+
+  function setFileBackupStatus(message, failed = false) {
+    const status = document.getElementById("fileBackupStatus");
+    if (status) { status.textContent = message; status.classList.toggle("backup-error", failed); }
+  }
+
+  function backupFolderPreference(value, remove = false) {
+    return new Promise((resolve, reject) => {
+      if (typeof indexedDB === "undefined") return reject(new Error("Memoria delle autorizzazioni non disponibile"));
+      const request = indexedDB.open("registroFilamentiBackup", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("preferences");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const writing = value !== undefined || remove;
+        const transaction = db.transaction("preferences", writing ? "readwrite" : "readonly");
+        const store = transaction.objectStore("preferences");
+        const operation = remove ? store.delete("folder") : writing ? store.put(value, "folder") : store.get("folder");
+        let result;
+        operation.onsuccess = () => { result = operation.result; };
+        transaction.oncomplete = () => { db.close(); resolve(result); };
+        transaction.onabort = transaction.onerror = () => { db.close(); reject(transaction.error || new Error("Preferenza non salvata")); };
+      };
+    });
+  }
+
+  function buildBackupData() {
+    if (!stateReady) throw new Error("Il registro non è pronto.");
+    const data = validateStateCandidate(captureStateSnapshot(), false);
+    return { ...data, file_type: "database_backup", export_version: INITIAL_VERSION,
+      export_date: new Date().toISOString(),
+      description: "Backup completo: inventario, acquisti, consumi, cataloghi, posizioni e impostazioni. Cronologia undo esclusa." };
+  }
+
+  async function writeBackupFile(directory, filename, content) {
+    const handle = await directory.getFileHandle(filename, { create: true });
+    const stream = await handle.createWritable();
+    try { await stream.write(content); await stream.close(); }
+    catch (error) { try { await stream.abort(); } catch (_) {} throw error; }
+  }
+
+  async function runFileBackup(force = false) {
+    if (!fileBackupDirectory) {
+      if (force) setFileBackupStatus("Scegli prima una cartella backup e autorizza la scrittura.", true);
+      return false;
+    }
+    if (fileBackupBusy) return false;
+    fileBackupBusy = true;
+    const generation = fileBackupGeneration;
+    const directory = fileBackupDirectory;
+    try {
+      if (await directory.queryPermission({ mode: "readwrite" }) !== "granted") {
+        throw new Error("Autorizza nuovamente la cartella con «Riattiva backup».");
+      }
+      if (!stateReady || storageWriteBlocked || !saveState()) throw new Error("Registro non salvabile: risolvi l'avviso sui dati prima del backup.");
+      const backup = buildBackupData();
+      // La data dell'export non rappresenta una modifica del registro.
+      const comparable = { ...backup }; delete comparable.export_date;
+      const fingerprint = statePayload(comparable);
+      if (!force && fingerprint === fileBackupPayload) return true;
+      const content = JSON.stringify(backup, null, 2);
+      const timestamp = backup.export_date.replace(/[:.]/g, "-");
+      await writeBackupFile(directory, `registro_filamenti_${timestamp}_r${backup.data_revision}_${INITIAL_VERSION.replace(".", "")}.json`, content);
+      await writeBackupFile(directory, "registro_filamenti_ultimo_backup.json", content);
+      if (generation === fileBackupGeneration) {
+        fileBackupPayload = fingerprint;
+        setFileBackupStatus(`Backup automatici attivi ogni 5 minuti · Cartella: ${directory.name} · Ultimo JSON: ${new Date(backup.export_date).toLocaleString("it-IT")}.`);
+      }
+      return true;
+    } catch (error) {
+      if (generation === fileBackupGeneration) setFileBackupStatus("Backup JSON non riuscito: " + error.message, true);
+      return false;
+    } finally { fileBackupBusy = false; }
+  }
+
+  async function chooseBackupDirectory() {
+    if (fileBackupBusy) return;
+    if (typeof window.showDirectoryPicker !== "function") {
+      setFileBackupStatus("Backup su cartella non disponibile in questo browser. Usa Chrome o Edge su PC; il salvataggio nel browser e l'export manuale restano disponibili.", true);
+      return;
+    }
+    try {
+      const directory = await window.showDirectoryPicker({ id: "registro-filamenti-backup", mode: "readwrite", startIn: "documents" });
+      fileBackupDirectory = directory;
+      fileBackupGeneration++;
+      fileBackupPayload = null;
+      let remembered = true;
+      try { await backupFolderPreference(directory); } catch (_) { remembered = false; }
+      const success = await runFileBackup(true);
+      if (success && !remembered) setFileBackupStatus(`Backup attivi in ${directory.name} per questa sessione. Al prossimo avvio seleziona di nuovo la cartella.`, true);
+    } catch (error) {
+      if (error.name !== "AbortError") setFileBackupStatus("Cartella backup non collegata: " + error.message, true);
+    }
+  }
+
+  async function reauthorizeFileBackup() {
+    if (!fileBackupDirectory) return chooseBackupDirectory();
+    try {
+      const permission = await fileBackupDirectory.requestPermission({ mode: "readwrite" });
+      if (permission !== "granted") throw new Error("Autorizzazione non concessa.");
+      await runFileBackup(true);
+    } catch (error) { setFileBackupStatus("Backup JSON sospeso: " + error.message, true); }
+  }
+
+  async function disableFileBackup() {
+    fileBackupDirectory = null;
+    fileBackupPayload = null;
+    fileBackupGeneration++;
+    try {
+      await backupFolderPreference(undefined, true);
+      setFileBackupStatus("Backup JSON disattivati. I file esistenti restano nella cartella; il salvataggio nel browser continua.");
+    } catch (_) { setFileBackupStatus("Backup disattivati per questa sessione. Impossibile rimuovere la preferenza: controlla lo stato al prossimo avvio.", true); }
+  }
+
+  async function initFileBackup() {
+    document.getElementById("chooseBackupDirectory")?.addEventListener("click", chooseBackupDirectory);
+    document.getElementById("reauthorizeFileBackup")?.addEventListener("click", reauthorizeFileBackup);
+    document.getElementById("backupNowButton")?.addEventListener("click", () => runFileBackup(true));
+    document.getElementById("disableFileBackup")?.addEventListener("click", disableFileBackup);
+    if (fileBackupTimer) clearInterval(fileBackupTimer);
+    fileBackupTimer = setInterval(() => { runFileBackup(); }, FILE_BACKUP_INTERVAL_MS);
+    // I timer possono essere rallentati quando la scheda è in background.
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) runFileBackup(); });
+    const generation = fileBackupGeneration;
+    try {
+      const directory = await backupFolderPreference();
+      if (!directory || generation !== fileBackupGeneration) return;
+      fileBackupDirectory = directory;
+      if (await directory.queryPermission({ mode: "readwrite" }) === "granted") await runFileBackup();
+      else setFileBackupStatus(`Backup JSON sospesi · Cartella: ${directory.name}. Premi «Riattiva backup» per autorizzare la scrittura.`, true);
+    } catch (_) { /* L'utente può configurare la cartella anche senza una preferenza precedente. */ }
+  }
+
   function exportJson() {
     const date = new Date().toISOString().slice(0, 10);
     if (!stateReady) {
@@ -5712,12 +5980,7 @@
       return;
     }
     try {
-      const data = validateStateCandidate(captureStateSnapshot(), false);
-      const exportData = {
-        ...data, file_type: "database_backup", export_version: INITIAL_VERSION,
-        export_date: new Date().toISOString(),
-        description: "Backup completo: inventario, acquisti, consumi, cataloghi, posizioni e impostazioni. Cronologia undo esclusa."
-      };
+      const exportData = buildBackupData();
       downloadJsonContent(JSON.stringify(exportData, null, 2), `registro_filamenti_${date}_${INITIAL_VERSION.replace(".", "")}.json`);
       showToast("Backup dello stato corrente esportato, inclusi consumi e posizioni.", "success");
     } catch (error) {
@@ -6339,8 +6602,8 @@
       const item = document.createElement("div");
       item.style.cssText = "display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--surface-soft); border-radius: 0.5rem; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;";
       
-      const colorHex = getColorHex(f.variant);
-      const pillHtml = getColoredPillHtml(f.variant);
+      const colorHex = getColorHex(f.variant, f);
+      const pillHtml = getColoredPillHtml(f.variant, f);
       
       // Barra di progresso
       const barHtml = `
@@ -7220,6 +7483,7 @@
       // Inizializza salvataggio automatico
       startPeriodicAutoSave();
       setupBeforeUnloadSave();
+      initFileBackup();
       console.log("Salvataggio automatico attivato");
 
       // opzionale: esegue i test interni in console

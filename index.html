@@ -501,6 +501,18 @@
       </div>
     </div>
 
+    <section class="file-backup-panel" aria-label="Backup JSON automatici">
+      <strong>Backup JSON automatici ogni 5 minuti</strong>
+      <p id="fileBackupStatus" role="status" aria-live="polite">Non configurati. Il registro viene comunque salvato automaticamente nel browser.</p>
+      <div class="buttons-row">
+        <button type="button" class="btn-secondary" id="chooseBackupDirectory">Scegli cartella backup</button>
+        <button type="button" class="btn-secondary" id="reauthorizeFileBackup">Riattiva backup</button>
+        <button type="button" class="btn-secondary" id="backupNowButton">Salva JSON ora</button>
+        <button type="button" class="btn-outline" id="disableFileBackup">Disattiva backup JSON</button>
+      </div>
+      <p class="hint">La cartella richiede la tua autorizzazione. Il backup su disco include le modifiche salvate, con una copia datata e un file «ultimo backup». La scheda deve restare aperta; eventuali modifiche nei moduli vanno confermate con Salva.</p>
+    </section>
+
     <div class="hint">
       Il nuovo filamento viene creato con:
       <br />
