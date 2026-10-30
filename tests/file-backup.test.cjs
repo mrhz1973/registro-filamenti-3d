@@ -36,7 +36,7 @@ test("Backup: snapshot completo, copia datata e ultimo JSON ripristinabile", asy
   assert.equal(await t.run("runFileBackup(true)"), true);
   assert.equal(t.files.size, 2);
   const data = JSON.parse(t.files.get("registro_filamenti_ultimo_backup.json"));
-  assert.equal(data.export_version, "V.107"); assert.equal(data.file_type, "database_backup");
+  assert.equal(data.export_version, "V.108"); assert.equal(data.file_type, "database_backup");
   assert.equal(data.filaments[0].remaining_weight_g, 1000); assert.equal(data.undoStack, undefined);
   assert.equal(t.run(`validateStateCandidate(${JSON.stringify(data)}).filaments[0].remaining_weight_g`), 1000);
 });

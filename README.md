@@ -1,4 +1,4 @@
-# Registro Filamenti 3D — V.107
+# Registro Filamenti 3D — V.108
 
 Applicazione locale per acquisti, magazzino, bobine e consumi di filamento. Apri `index.html` nel browser: non servono installazione, server o connessione a Internet.
 
@@ -6,7 +6,13 @@ Applicazione locale per acquisti, magazzino, bobine e consumi di filamento. Apri
 
 Prima di aggiornare conserva un export JSON dal browser che contiene il tuo registro. I dati sono nel browser, **non nella cartella dell'app né su GitHub**. Cambiare browser, profilo, percorso `file://` o indirizzo di un server locale può mostrare un registro diverso o vuoto: in quel caso importa il backup, senza cancellare quello precedente.
 
-V.107 legge i backup precedenti, incluso il formato V318. Il salvataggio usa ancora la chiave `registroFilamentiState_v3`, con un formato interno identificato da `schemaVersion: 4`. La versione dell'app resta V.107; la revisione dei dati aumenta separatamente.
+V.108 legge i backup precedenti, incluso il formato V318. Il salvataggio usa ancora la chiave `registroFilamentiState_v3`, con un formato interno identificato da `schemaVersion: 4`. La versione dell'app resta V.108; la revisione dei dati aumenta separatamente.
+
+## Aprire una bobina
+
+Nell'editor usa **Apri bobina** sulla riga della sigillata interessata, poi **Salva modifiche**. La stessa bobina diventa aperta al 100%: sigillate diminuisce di una, aperte aumenta di una e il totale resta uguale. Posizione, colore, identificatore e grammi vengono mantenuti; l'apertura da sola non registra consumo.
+
+Anche aumentando il contatore **Aperte** vengono convertite sigillate esistenti, dando priorità a quella selezionata nella vista posizioni. Il contatore non crea bobine aggiuntive quando mancano sigillate disponibili. Per registrare nuove bobine usa il modulo di aggiunta. Annulla nel modulo scarta le modifiche; dopo il salvataggio è disponibile Annulla/Ripristina.
 
 ## Backup automatici su disco
 
@@ -64,4 +70,4 @@ node --test tests/browser.test.cjs
 
 Per una verifica pratica: importa una copia del backup, modifica una bobina e annulla; esporta e ripristina; prova filtri, trascinamento delle finestre e tema chiaro/scuro. Esegui queste prove in un profilo dedicato, separato dal registro personale.
 
-Le note della versione sono in [docs/V107.md](docs/V107.md); le versioni precedenti sono documentate in [docs/V105.md](docs/V105.md) e [docs/V104.md](docs/V104.md). Le convenzioni di lavoro sono in `.cursorrules` e `docs/CURSOR_BRIEFING.md`.
+Le note della versione sono in [docs/V108.md](docs/V108.md); le versioni precedenti sono documentate in [docs/V107.md](docs/V107.md), [docs/V105.md](docs/V105.md) e [docs/V104.md](docs/V104.md). Le convenzioni di lavoro sono in `.cursorrules` e `docs/CURSOR_BRIEFING.md`.

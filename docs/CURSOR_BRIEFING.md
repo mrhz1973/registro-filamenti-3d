@@ -1,6 +1,6 @@
 # 📋 Briefing Progetto: Registro Filamenti 3D
 
-> **Aggiornamento V.107:** leggere il README per il catalogo colori Bambu ufficiale incluso offline e i backup su cartella ogni cinque minuti. Rimangono avvisi non bloccanti sulle capacità AMS, trascinamento e schema 4. [V105.md](V105.md) e [V104.md](V104.md) descrivono versioni precedenti.
+> **Aggiornamento V.108:** leggere il README e [V108.md](V108.md). L'apertura converte una sigillata esistente mantenendo quantità, identità, posizione e peso. Restano catalogo colori Bambu, backup su cartella, avvisi non bloccanti sulle capacità AMS, trascinamento e schema 4. [V107.md](V107.md), [V105.md](V105.md) e [V104.md](V104.md) descrivono versioni precedenti.
 
 > **Per Cursor AI**: Leggi questo documento PRIMA di toccare il codice. Contiene contesto, architettura, convenzioni e roadmap. Le regole operative sono in `.cursorrules` nella root.
 
